@@ -9,9 +9,9 @@ function GetColor(props)
 end
 
 function GetPrettyName(props)
-  local ip = props["IP Address"].Value
-  if ip ~= "" then
-    return "WinPC Control  |  " .. ip
+  local name = props["Computer Name"].Value
+  if name ~= "" then
+    return "WinPC Control  |  " .. name
   end
   return "WinPC Control  |  (unconfigured)"
 end

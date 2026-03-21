@@ -1,0 +1,700 @@
+-- QSYS WinPC Control Plugin
+-- Author: Michael King
+-- Q-SYS Designer v10+ / Core 8 Flex
+
+PluginInfo = {
+  Name        = "QSYS WinPC Control~PC",
+  Version     = "0.1",
+  BuildVersion= "0.1.0.0",
+  Id          = "dd941513-d452-416e-95eb-b47d08457b36",
+  Author      = "Michael King",
+  Description = "Remote control a Windows PC from Q-SYS: power (WOL), volume/mute (SSH), status polling (TCP/RDP)"
+}
+
+function GetColor(props)
+  return { 30, 90, 160 }
+end
+
+function GetPrettyName(props)
+  local name = props["Computer Name"].Value
+  if name ~= "" then
+    return "WinPC Control  |  " .. name
+  end
+  return "WinPC Control  |  (unconfigured)"
+end
+
+PageNames = { "Control", "Setup" }
+
+function GetPages(props)
+  local pages = {}
+  for ix, name in ipairs(PageNames) do
+    table.insert(pages, { name = PageNames[ix] })
+  end
+  return pages
+end
+
+function GetModel(props)
+  local model = {}
+  table.insert(model, { "Windows PC" })
+  return model
+end
+
+function GetProperties()
+  local props = {}
+  -- Identity
+  table.insert(props, {
+    Name  = "Computer Name",
+    Type  = "string",
+    Value = ""
+  })
+  
+  -- Network
+  table.insert(props, {
+    Name  = "Hostname or IP",
+    Type  = "string",
+    Value = ""
+  })
+  
+  table.insert(props, {
+    Name  = "MAC Address",
+    Type  = "string",
+    Value = ""
+    -- Optional: auto-discovered from /status when PC is online.
+    -- Only required for WOL before the PC has ever been seen online.
+  })
+  
+  -- HTTP listener
+  table.insert(props, {
+    Name  = "HTTP Port",
+    Type  = "integer",
+    Min   = 1024,
+    Max   = 65535,
+    Value = 2207
+  })
+  
+  table.insert(props, {
+    Name  = "Auth Token",
+    Type  = "string",
+    Value = ""
+  })
+  
+  -- Polling
+  table.insert(props, {
+    Name  = "Poll Interval",
+    Type  = "integer",
+    Min   = 5,
+    Max   = 300,
+    Value = 30
+  })
+  
+  -- Pin visibility toggles
+  table.insert(props, {
+    Name  = "Show Power Pins",
+    Type  = "boolean",
+    Value = true
+  })
+  
+  table.insert(props, {
+    Name  = "Show Volume Pins",
+    Type  = "boolean",
+    Value = true
+  })
+  
+  table.insert(props, {
+    Name  = "Show Status Pins",
+    Type  = "boolean",
+    Value = true
+  })
+  
+  -- Debug
+  table.insert(props, {
+    Name    = "Debug Print",
+    Type    = "enum",
+    Choices = { "None", "Tx/Rx", "All" },
+    Value   = "None"
+  })
+  return props
+end
+
+function GetPins(props)
+  local pins = {}
+  -- No non-control pins required for this plugin
+  return pins
+end
+
+function RectifyProperties(props)
+  -- Hide Debug Print when set to None to reduce clutter in the Properties panel.
+  -- Remove this block if you want Debug Print always visible.
+  if props["Debug Print"].Value == "None" then
+    props["Debug Print"].IsHidden = true
+  else
+    props["Debug Print"].IsHidden = false
+  end
+  return props
+end
+
+function GetComponents(props)
+  local components = {}
+  -- No internal Q-SYS components used by this plugin
+  return components
+end
+
+function GetWiring(props)
+  local wiring = {}
+  -- No internal component wiring required for this plugin
+  return wiring
+end
+
+function GetControls(props)
+  local ctrls = {}
+  local showPower  = props["Show Power Pins"].Value
+  local showVolume = props["Show Volume Pins"].Value
+  local showStatus = props["Show Status Pins"].Value
+  
+  -- ---- Power ---------------------------------------------------------------
+  table.insert(ctrls, {
+    Name        = "PowerOn",
+    ControlType = "Button",
+    ButtonType  = "Momentary",
+    Count       = 1,
+    UserPin     = showPower,
+    PinStyle    = "Input",
+    Icon        = "Power"
+  })
+  
+  table.insert(ctrls, {
+    Name        = "Shutdown",
+    ControlType = "Button",
+    ButtonType  = "Momentary",
+    Count       = 1,
+    UserPin     = showPower,
+    PinStyle    = "Input",
+    Icon        = "Power"
+  })
+  
+  -- ---- Status --------------------------------------------------------------
+  table.insert(ctrls, {
+    Name          = "OnlineStatus",
+    ControlType   = "Indicator",
+    IndicatorType = "LED",
+    Count         = 1,
+    UserPin       = showStatus,
+    PinStyle      = "Output"
+  })
+  
+  table.insert(ctrls, {
+    Name          = "StatusText",
+    ControlType   = "Indicator",
+    IndicatorType = "Text",
+    Count         = 1,
+    UserPin       = showStatus,
+    PinStyle      = "Output"
+  })
+  
+  table.insert(ctrls, {
+    Name          = "LastPoll",
+    ControlType   = "Indicator",
+    IndicatorType = "Text",
+    Count         = 1,
+    UserPin       = showStatus,
+    PinStyle      = "Output"
+  })
+  
+  -- ---- Audio ---------------------------------------------------------------
+  table.insert(ctrls, {
+    Name        = "Volume",
+    ControlType = "Knob",
+    ControlUnit = "Percent",
+    Min         = 0,
+    Max         = 100,
+    Count       = 1,
+    UserPin     = showVolume,
+    PinStyle    = "Both"
+  })
+  
+  table.insert(ctrls, {
+    Name        = "Mute",
+    ControlType = "Button",
+    ButtonType  = "Toggle",
+    Count       = 1,
+    UserPin     = showVolume,
+    PinStyle    = "Both"
+  })
+  return ctrls
+end
+
+function GetControlLayout(props)
+  local layout   = {}
+  local graphics = {}
+  local CurrentPage = PageNames[props["page_index"].Value]
+  
+  -- ============================================================
+  -- CONTROL PAGE
+  -- ============================================================
+  if CurrentPage == "Control" then
+  
+    -- Background
+    table.insert(graphics, {
+      Type        = "GroupBox",
+      Text        = "",
+      Fill        = { 220, 220, 220 },
+      StrokeWidth = 0,
+      Position    = { 0, 0 },
+      Size        = { 400, 228 }
+    })
+  
+    -- ---- Power Control ----
+    table.insert(graphics, {
+      Type        = "GroupBox",
+      Text        = "Power Control",
+      Fill        = { 200, 215, 235 },
+      StrokeWidth = 1,
+      StrokeColor = { 120, 140, 170 },
+      Position    = { 5, 5 },
+      Size        = { 390, 52 }
+    })
+  
+    layout["PowerOn"] = {
+      PrettyName = "Power~Power On",
+      Style      = "Button",
+      Legend     = "Power On",
+      Position   = { 12, 23 },
+      Size       = { 115, 26 },
+      Color      = { 0, 180, 0 }
+    }
+  
+    layout["Shutdown"] = {
+      PrettyName = "Power~Shutdown",
+      Style      = "Button",
+      Legend     = "Shutdown",
+      Position   = { 135, 23 },
+      Size       = { 115, 26 },
+      Color      = { 200, 70, 30 }
+    }
+  
+    -- ---- Connection Status ----
+    table.insert(graphics, {
+      Type        = "GroupBox",
+      Text        = "Connection Status",
+      Fill        = { 235, 235, 235 },
+      StrokeWidth = 1,
+      StrokeColor = { 150, 150, 150 },
+      Position    = { 5, 65 },
+      Size        = { 390, 82 }
+    })
+  
+    table.insert(graphics, {
+      Type        = "Text",
+      Text        = "Status:",
+      Position    = { 12, 84 },
+      Size        = { 52, 18 },
+      FontSize    = 12,
+      HTextAlign  = "Right",
+      Color       = { 50, 50, 50 }
+    })
+  
+    layout["OnlineStatus"] = {
+      PrettyName = "Status~Online LED",
+      Style      = "Indicator",
+      Position   = { 70, 85 },
+      Size       = { 20, 20 }
+    }
+  
+    layout["StatusText"] = {
+      PrettyName = "Status~Status Text",
+      Style      = "Text",
+      Position   = { 97, 85 },
+      Size       = { 190, 20 },
+      FontSize   = 12
+    }
+  
+    table.insert(graphics, {
+      Type       = "Text",
+      Text       = "Last Poll:",
+      Position   = { 12, 113 },
+      Size       = { 72, 16 },
+      FontSize   = 11,
+      HTextAlign = "Right",
+      Color      = { 80, 80, 80 }
+    })
+  
+    layout["LastPoll"] = {
+      PrettyName = "Status~Last Poll",
+      Style      = "Text",
+      Position   = { 90, 113 },
+      Size       = { 200, 16 },
+      FontSize   = 11
+    }
+  
+    -- ---- Audio ----
+    table.insert(graphics, {
+      Type        = "GroupBox",
+      Text        = "Audio",
+      Fill        = { 235, 235, 235 },
+      StrokeWidth = 1,
+      StrokeColor = { 150, 150, 150 },
+      Position    = { 5, 155 },
+      Size        = { 390, 62 }
+    })
+  
+    table.insert(graphics, {
+      Type       = "Text",
+      Text       = "Volume:",
+      Position   = { 12, 175 },
+      Size       = { 60, 16 },
+      FontSize   = 12,
+      HTextAlign = "Right",
+      Color      = { 50, 50, 50 }
+    })
+  
+    layout["Volume"] = {
+      PrettyName = "Audio~Volume",
+      Style      = "Fader",
+      Position   = { 77, 173 },
+      Size       = { 215, 22 }
+    }
+  
+    layout["Mute"] = {
+      PrettyName = "Audio~Mute",
+      Style      = "Button",
+      Legend     = "Mute",
+      Position   = { 300, 171 },
+      Size       = { 88, 28 },
+      Color      = { 200, 50, 50 }
+    }
+  
+  -- ============================================================
+  -- SETUP PAGE
+  -- ============================================================
+  elseif CurrentPage == "Setup" then
+  
+    -- Background
+    table.insert(graphics, {
+      Type        = "GroupBox",
+      Text        = "",
+      Fill        = { 220, 220, 220 },
+      StrokeWidth = 0,
+      Position    = { 0, 0 },
+      Size        = { 400, 195 }
+    })
+  
+    table.insert(graphics, {
+      Type        = "GroupBox",
+      Text        = "Connection Configuration",
+      Fill        = { 235, 235, 235 },
+      StrokeWidth = 1,
+      StrokeColor = { 150, 150, 150 },
+      Position    = { 5, 5 },
+      Size        = { 390, 180 }
+    })
+  
+    local function cfg_label(text, y)
+      table.insert(graphics, {
+        Type       = "Text",
+        Text       = text,
+        Position   = { 12, y },
+        Size       = { 110, 16 },
+        FontSize   = 11,
+        HTextAlign = "Right",
+        Color      = { 80, 80, 80 }
+      })
+    end
+  
+    local function cfg_value(text, y)
+      table.insert(graphics, {
+        Type       = "Text",
+        Text       = text,
+        Position   = { 127, y },
+        Size       = { 260, 16 },
+        FontSize   = 11,
+        HTextAlign = "Left",
+        Color      = { 20, 20, 20 }
+      })
+    end
+  
+    cfg_label("Computer Name:",  24)
+    cfg_value(props["Computer Name"].Value ~= "" and props["Computer Name"].Value or "(not set)", 24)
+  
+    cfg_label("Hostname / IP:",  44)
+    cfg_value(props["Hostname or IP"].Value ~= "" and props["Hostname or IP"].Value or "(not set)", 44)
+  
+    cfg_label("MAC Address:",    64)
+    cfg_value(props["MAC Address"].Value ~= "" and props["MAC Address"].Value or "(auto-discover)", 64)
+  
+    cfg_label("HTTP Port:",      84)
+    cfg_value(tostring(props["HTTP Port"].Value), 84)
+  
+    cfg_label("Poll Interval:", 104)
+    cfg_value(tostring(props["Poll Interval"].Value) .. " seconds", 104)
+  
+    cfg_label("Auth Token:",    124)
+    local tokenSet = props["Auth Token"].Value ~= ""
+    cfg_value(tokenSet and "(configured)" or "NOT SET — run install.ps1 on PC first", 124)
+  
+    table.insert(graphics, {
+      Type       = "Text",
+      Text       = "Token is stored in C:\\QSYSControl\\config.txt on the Windows PC.",
+      Position   = { 12, 150 },
+      Size       = { 375, 14 },
+      FontSize   = 9,
+      HTextAlign = "Left",
+      Color      = { 110, 110, 110 }
+    })
+  
+  end
+  return layout, graphics
+end
+
+if Controls then
+  -- =============================================================
+  -- runtime.lua  —  QSYS WinPC Control
+  -- Runs inside Q-SYS Core when the plugin is active.
+  -- Transport: HTTP (QSYSControlServer.ps1 on Windows side)
+  -- =============================================================
+  
+  -- -----------------------------------------------------------
+  -- CONFIG (from Properties)
+  -- -----------------------------------------------------------
+  local host         = Properties["Hostname or IP"].Value
+  local macProperty  = Properties["MAC Address"].Value   -- manual fallback
+  local httpPort     = Properties["HTTP Port"].Value
+  local authToken    = Properties["Auth Token"].Value
+  local pollInterval = Properties["Poll Interval"].Value
+  local debugPrint   = Properties["Debug Print"].Value
+  
+  local baseUrl    = string.format("http://%s:%d", host, httpPort)
+  local authHeader = { Authorization = "Bearer " .. authToken }
+  
+  -- MAC is auto-discovered from /status and cached here at runtime.
+  -- Falls back to the property value if never seen online.
+  local cachedMac  = (macProperty ~= "") and macProperty or nil
+  
+  -- -----------------------------------------------------------
+  -- STATE MACHINE
+  -- States: OFFLINE, BOOTING, ONLINE, SHUTTING_DOWN
+  -- -----------------------------------------------------------
+  local State = "OFFLINE"
+  
+  local function SetState(newState)
+    if State == newState then return end
+    State = newState
+    if debugPrint ~= "None" then
+      print("[WinPC] State → " .. newState)
+    end
+  
+    if newState == "ONLINE" then
+      Controls.OnlineStatus.Boolean = true
+      Controls.StatusText.String    = "Online"
+    elseif newState == "BOOTING" then
+      Controls.OnlineStatus.Boolean = false
+      Controls.StatusText.String    = "Booting..."
+    elseif newState == "SHUTTING_DOWN" then
+      Controls.OnlineStatus.Boolean = false
+      Controls.StatusText.String    = "Shutting Down..."
+    else  -- OFFLINE
+      Controls.OnlineStatus.Boolean = false
+      Controls.StatusText.String    = "Offline"
+      Controls.Volume.Value         = 0
+      Controls.Mute.Boolean         = false
+    end
+  end
+  
+  -- -----------------------------------------------------------
+  -- DEBUG HELPER
+  -- -----------------------------------------------------------
+  local function dbg(dir, msg)
+    if debugPrint == "All" or debugPrint == "Tx/Rx" then
+      print("[WinPC][" .. dir .. "] " .. msg)
+    end
+  end
+  
+  -- -----------------------------------------------------------
+  -- HTTP TRANSPORT
+  -- -----------------------------------------------------------
+  
+  -- POST /command — fire and forget with optional callback(code, data, err)
+  local function http_post(cmd, callback)
+    if authToken == "" then
+      print("[WinPC] WARNING: Auth Token not configured in properties")
+      return
+    end
+    dbg("Tx", "POST /command → " .. cmd)
+    HttpClient.Download {
+      Url     = baseUrl .. "/command",
+      Headers = {
+        Authorization    = "Bearer " .. authToken,
+        ["Content-Type"] = "text/plain"
+      },
+      Method  = "POST",
+      Body    = cmd,
+      Timeout = 5,
+      EventHandler = function(tbl, code, data, err)
+        dbg("Rx", "POST /command ← " .. tostring(code))
+        if callback then callback(code, data, err) end
+      end
+    }
+  end
+  
+  -- GET /status — calls callback(code, data, err)
+  local function http_get_status(callback)
+    if authToken == "" then return end
+    dbg("Tx", "GET /status")
+    HttpClient.Download {
+      Url     = baseUrl .. "/status",
+      Headers = authHeader,
+      Timeout = 5,
+      EventHandler = function(tbl, code, data, err)
+        dbg("Rx", "GET /status ← " .. tostring(code))
+        callback(code, data, err)
+      end
+    }
+  end
+  -- -----------------------------------------------------------
+  -- WOL  (Wake-on-LAN magic packet via UDP broadcast)
+  -- -----------------------------------------------------------
+  local function SendWOL()
+    local mac = cachedMac
+    if not mac or mac == "" then
+      print("[WinPC] WOL: MAC not yet known — bring PC online once so it can be auto-discovered, or set MAC Address property manually")
+      return
+    end
+  
+    local bytes = {}
+    for byte in mac:gmatch("[%x][%x]") do
+      table.insert(bytes, tonumber(byte, 16))
+    end
+    if #bytes ~= 6 then
+      print("[WinPC] WOL: Invalid MAC address: " .. mac)
+      return
+    end
+  
+    local packet   = string.rep("\xFF", 6)
+    local macBytes = string.char(table.unpack(bytes))
+    packet = packet .. string.rep(macBytes, 16)
+  
+    local udp = UdpSocket.New()
+    udp:Open("0.0.0.0", 0)
+    udp:Send("255.255.255.255", 9, packet)
+    udp:Close()
+  
+    dbg("Tx", "WOL magic packet → " .. mac)
+    SetState("BOOTING")
+  end
+  
+  -- -----------------------------------------------------------
+  -- COMMAND SENDERS
+  -- -----------------------------------------------------------
+  
+  local function SendShutdown()
+    dbg("Tx", "Sending SHUTDOWN")
+    http_post("SHUTDOWN", function(code, _, err)
+      if code == 200 then
+        SetState("SHUTTING_DOWN")
+      else
+        print("[WinPC] Shutdown failed: " .. tostring(err or code))
+      end
+    end)
+  end
+  
+  local function SendVolume(pct)
+    http_post("VOLUME:" .. tostring(math.floor(pct)))
+  end
+  
+  local function SendMute(muted)
+    http_post("MUTE:" .. (muted and "1" or "0"))
+  end
+  
+  -- -----------------------------------------------------------
+  -- POLL TIMER  (HTTP GET /status every N seconds)
+  -- -----------------------------------------------------------
+  local pollTimer = Timer.New()
+  
+  local function ParseStatus(body)
+    local status = {}
+    for line in body:gmatch("[^\r\n]+") do
+      local k, v = line:match("^(%u+):(.+)$")
+      if k and v then status[k] = v:match("^%s*(.-)%s*$") end
+    end
+    return status
+  end
+  
+  local function DoPoll()
+    if host == "" then return end
+  
+    http_get_status(function(code, data, err)
+      if code == 200 and data then
+        -- Server responded — PC is online
+        if State ~= "ONLINE" then SetState("ONLINE") end
+  
+        local status = ParseStatus(data)
+        if status.VOLUME then
+          local v = tonumber(status.VOLUME)
+          if v then Controls.Volume.Value = v end
+        end
+        if status.MUTE then
+          Controls.Mute.Boolean = (status.MUTE == "1")
+        end
+        if status.MAC and status.MAC ~= "" then
+          cachedMac = status.MAC
+          dbg("Rx", "MAC cached: " .. cachedMac)
+        end
+        Controls.LastPoll.String = os.date("%Y-%m-%d %H:%M:%S")
+        dbg("Rx", "Vol=" .. (status.VOLUME or "?") .. " Mute=" .. (status.MUTE or "?"))
+  
+      else
+        -- HTTP failed — PC offline, booting, or service not running
+        if State ~= "SHUTTING_DOWN" then
+          if State == "BOOTING" then
+            -- Stay in BOOTING — WOL was recently sent, keep waiting
+          else
+            SetState("OFFLINE")
+          end
+        end
+        if debugPrint ~= "None" then
+          print("[WinPC] Poll failed: " .. tostring(err or code))
+        end
+      end
+    end)
+  end
+  
+  pollTimer.EventHandler = DoPoll
+  
+  -- Guard: don't send audio/power commands when PC isn't up
+  local function RequireOnline(label)
+    if State ~= "ONLINE" then
+      print("[WinPC] " .. label .. " ignored — PC is " .. State)
+      return false
+    end
+    return true
+  end
+  
+  -- -----------------------------------------------------------
+  -- CONTROL EVENT HANDLERS
+  -- -----------------------------------------------------------
+  Controls.PowerOn.EventHandler = function()
+    SendWOL()
+  end
+  
+  Controls.Shutdown.EventHandler = function()
+    if not RequireOnline("Shutdown") then return end
+    SendShutdown()
+  end
+  
+  Controls.Volume.EventHandler = function()
+    if not RequireOnline("Volume") then return end
+    SendVolume(Controls.Volume.Value)
+  end
+  
+  Controls.Mute.EventHandler = function()
+    if not RequireOnline("Mute") then return end
+    SendMute(Controls.Mute.Boolean)
+  end
+  
+  -- -----------------------------------------------------------
+  -- STARTUP
+  -- -----------------------------------------------------------
+  SetState("OFFLINE")
+  pollTimer:Start(pollInterval)
+  print("[WinPC] Plugin started — polling every " .. pollInterval .. "s → " .. (host ~= "" and host or "(unconfigured)"))
+  
+end

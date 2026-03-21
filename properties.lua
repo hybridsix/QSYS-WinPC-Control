@@ -1,6 +1,13 @@
+-- Identity
+table.insert(props, {
+  Name  = "Computer Name",
+  Type  = "string",
+  Value = ""
+})
+
 -- Network
 table.insert(props, {
-  Name  = "IP Address",
+  Name  = "Hostname or IP",
   Type  = "string",
   Value = ""
 })
@@ -9,6 +16,8 @@ table.insert(props, {
   Name  = "MAC Address",
   Type  = "string",
   Value = ""
+  -- Optional: auto-discovered from /status when PC is online.
+  -- Only required for WOL before the PC has ever been seen online.
 })
 
 -- HTTP listener

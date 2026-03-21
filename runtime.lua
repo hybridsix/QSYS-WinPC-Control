@@ -7,15 +7,19 @@
 -- -----------------------------------------------------------
 -- CONFIG (from Properties)
 -- -----------------------------------------------------------
-local ip           = Properties["IP Address"].Value
-local mac          = Properties["MAC Address"].Value
+local host         = Properties["Hostname or IP"].Value
+local macProperty  = Properties["MAC Address"].Value   -- manual fallback
 local httpPort     = Properties["HTTP Port"].Value
 local authToken    = Properties["Auth Token"].Value
 local pollInterval = Properties["Poll Interval"].Value
 local debugPrint   = Properties["Debug Print"].Value
 
-local baseUrl    = string.format("http://%s:%d", ip, httpPort)
+local baseUrl    = string.format("http://%s:%d", host, httpPort)
 local authHeader = { Authorization = "Bearer " .. authToken }
+
+-- MAC is auto-discovered from /status and cached here at runtime.
+-- Falls back to the property value if never seen online.
+local cachedMac  = (macProperty ~= "") and macProperty or nil
 
 -- -----------------------------------------------------------
 -- STATE MACHINE
@@ -101,8 +105,9 @@ end
 -- WOL  (Wake-on-LAN magic packet via UDP broadcast)
 -- -----------------------------------------------------------
 local function SendWOL()
-  if mac == "" then
-    print("[WinPC] WOL: MAC address not configured")
+  local mac = cachedMac
+  if not mac or mac == "" then
+    print("[WinPC] WOL: MAC not yet known — bring PC online once so it can be auto-discovered, or set MAC Address property manually")
     return
   end
 
@@ -166,7 +171,7 @@ local function ParseStatus(body)
 end
 
 local function DoPoll()
-  if ip == "" then return end
+  if host == "" then return end
 
   http_get_status(function(code, data, err)
     if code == 200 and data then
@@ -180,6 +185,10 @@ local function DoPoll()
       end
       if status.MUTE then
         Controls.Mute.Boolean = (status.MUTE == "1")
+      end
+      if status.MAC and status.MAC ~= "" then
+        cachedMac = status.MAC
+        dbg("Rx", "MAC cached: " .. cachedMac)
       end
       Controls.LastPoll.String = os.date("%Y-%m-%d %H:%M:%S")
       dbg("Rx", "Vol=" .. (status.VOLUME or "?") .. " Mute=" .. (status.MUTE or "?"))
@@ -238,5 +247,5 @@ end
 -- -----------------------------------------------------------
 SetState("OFFLINE")
 pollTimer:Start(pollInterval)
-print("[WinPC] Plugin started — polling every " .. pollInterval .. "s → " .. (ip ~= "" and ip or "(no IP)"))
+print("[WinPC] Plugin started — polling every " .. pollInterval .. "s → " .. (host ~= "" and host or "(unconfigured)"))
 

@@ -147,7 +147,7 @@ elseif CurrentPage == "Setup" then
     Fill        = { 220, 220, 220 },
     StrokeWidth = 0,
     Position    = { 0, 0 },
-    Size        = { 400, 175 }
+    Size        = { 400, 195 }
   })
 
   table.insert(graphics, {
@@ -157,7 +157,7 @@ elseif CurrentPage == "Setup" then
     StrokeWidth = 1,
     StrokeColor = { 150, 150, 150 },
     Position    = { 5, 5 },
-    Size        = { 390, 160 }
+    Size        = { 390, 180 }
   })
 
   local function cfg_label(text, y)
@@ -184,26 +184,29 @@ elseif CurrentPage == "Setup" then
     })
   end
 
-  cfg_label("IP Address:",     24)
-  cfg_value(props["IP Address"].Value ~= "" and props["IP Address"].Value or "(not set)", 24)
+  cfg_label("Computer Name:",  24)
+  cfg_value(props["Computer Name"].Value ~= "" and props["Computer Name"].Value or "(not set)", 24)
 
-  cfg_label("MAC Address:",    44)
-  cfg_value(props["MAC Address"].Value ~= "" and props["MAC Address"].Value or "(not set)", 44)
+  cfg_label("Hostname / IP:",  44)
+  cfg_value(props["Hostname or IP"].Value ~= "" and props["Hostname or IP"].Value or "(not set)", 44)
 
-  cfg_label("HTTP Port:",      64)
-  cfg_value(tostring(props["HTTP Port"].Value), 64)
+  cfg_label("MAC Address:",    64)
+  cfg_value(props["MAC Address"].Value ~= "" and props["MAC Address"].Value or "(auto-discover)", 64)
 
-  cfg_label("Poll Interval:",  84)
-  cfg_value(tostring(props["Poll Interval"].Value) .. " seconds", 84)
+  cfg_label("HTTP Port:",      84)
+  cfg_value(tostring(props["HTTP Port"].Value), 84)
 
-  cfg_label("Auth Token:",    104)
+  cfg_label("Poll Interval:", 104)
+  cfg_value(tostring(props["Poll Interval"].Value) .. " seconds", 104)
+
+  cfg_label("Auth Token:",    124)
   local tokenSet = props["Auth Token"].Value ~= ""
-  cfg_value(tokenSet and "(configured)" or "NOT SET — run install.ps1 on PC first", 104)
+  cfg_value(tokenSet and "(configured)" or "NOT SET — run install.ps1 on PC first", 124)
 
   table.insert(graphics, {
     Type       = "Text",
     Text       = "Token is stored in C:\\QSYSControl\\config.txt on the Windows PC.",
-    Position   = { 12, 130 },
+    Position   = { 12, 150 },
     Size       = { 375, 14 },
     FontSize   = 9,
     HTextAlign = "Left",

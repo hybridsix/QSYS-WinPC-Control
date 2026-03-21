@@ -233,12 +233,26 @@ function Send-Response {
     $Response.OutputStream.Close()
 }
 
+function Get-MacAddress {
+    try {
+        $mac = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.HardwareInterface } |
+                Sort-Object -Property Speed -Descending |
+                Select-Object -First 1).MacAddress
+        # Normalise to XX:XX:XX:XX:XX:XX
+        return $mac -replace '-', ':'
+    }
+    catch {
+        return ""
+    }
+}
+
 function Get-StatusBody {
-    $vol    = Get-MasterVolume
-    $muted  = Get-MasterMute
+    $vol     = Get-MasterVolume
+    $muted   = Get-MasterMute
     $muteInt = if ($muted) { "1" } else { "0" }
-    $ts     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    return "VOLUME:$vol`r`nMUTE:$muteInt`r`nUPDATED:$ts`r`n"
+    $ts      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $mac     = Get-MacAddress
+    return "VOLUME:$vol`r`nMUTE:$muteInt`r`nMAC:$mac`r`nUPDATED:$ts`r`n"
 }
 
 
