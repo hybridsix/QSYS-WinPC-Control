@@ -1,18 +1,21 @@
 -- =============================================================
 -- runtime.lua  —  QSYS WinPC Control
 -- Runs inside Q-SYS Core when the plugin is active.
+-- Transport: HTTP (QSYSControlServer.ps1 on Windows side)
 -- =============================================================
 
 -- -----------------------------------------------------------
 -- CONFIG (from Properties)
 -- -----------------------------------------------------------
-local ip            = Properties["IP Address"].Value
-local mac           = Properties["MAC Address"].Value
-local sshUser       = Properties["SSH Username"].Value
-local sshKey        = Properties["SSH Private Key"].Value
-local statusPath    = Properties["Status File Path"].Value
-local pollInterval  = Properties["Poll Interval"].Value
-local debugPrint    = Properties["Debug Print"].Value
+local ip           = Properties["IP Address"].Value
+local mac          = Properties["MAC Address"].Value
+local httpPort     = Properties["HTTP Port"].Value
+local authToken    = Properties["Auth Token"].Value
+local pollInterval = Properties["Poll Interval"].Value
+local debugPrint   = Properties["Debug Print"].Value
+
+local baseUrl    = string.format("http://%s:%d", ip, httpPort)
+local authHeader = { Authorization = "Bearer " .. authToken }
 
 -- -----------------------------------------------------------
 -- STATE MACHINE
@@ -54,6 +57,47 @@ local function dbg(dir, msg)
 end
 
 -- -----------------------------------------------------------
+-- HTTP TRANSPORT
+-- -----------------------------------------------------------
+
+-- POST /command — fire and forget with optional callback(code, data, err)
+local function http_post(cmd, callback)
+  if authToken == "" then
+    print("[WinPC] WARNING: Auth Token not configured in properties")
+    return
+  end
+  dbg("Tx", "POST /command → " .. cmd)
+  HttpClient.Download {
+    Url     = baseUrl .. "/command",
+    Headers = {
+      Authorization    = "Bearer " .. authToken,
+      ["Content-Type"] = "text/plain"
+    },
+    Method  = "POST",
+    Body    = cmd,
+    Timeout = 5,
+    EventHandler = function(tbl, code, data, err)
+      dbg("Rx", "POST /command ← " .. tostring(code))
+      if callback then callback(code, data, err) end
+    end
+  }
+end
+
+-- GET /status — calls callback(code, data, err)
+local function http_get_status(callback)
+  if authToken == "" then return end
+  dbg("Tx", "GET /status")
+  HttpClient.Download {
+    Url     = baseUrl .. "/status",
+    Headers = authHeader,
+    Timeout = 5,
+    EventHandler = function(tbl, code, data, err)
+      dbg("Rx", "GET /status ← " .. tostring(code))
+      callback(code, data, err)
+    end
+  }
+end
+-- -----------------------------------------------------------
 -- WOL  (Wake-on-LAN magic packet via UDP broadcast)
 -- -----------------------------------------------------------
 local function SendWOL()
@@ -62,7 +106,6 @@ local function SendWOL()
     return
   end
 
-  -- Parse MAC (accepts XX:XX:XX:XX:XX:XX or XX-XX-XX-XX-XX-XX)
   local bytes = {}
   for byte in mac:gmatch("[%x][%x]") do
     table.insert(bytes, tonumber(byte, 16))
@@ -72,13 +115,12 @@ local function SendWOL()
     return
   end
 
-  -- Build magic packet: 6x 0xFF + 16x MAC
-  local packet = string.rep("\xFF", 6)
+  local packet   = string.rep("\xFF", 6)
   local macBytes = string.char(table.unpack(bytes))
   packet = packet .. string.rep(macBytes, 16)
 
   local udp = UdpSocket.New()
-  udp:Open("0.0.0.0", 0)  -- bind any local port
+  udp:Open("0.0.0.0", 0)
   udp:Send("255.255.255.255", 9, packet)
   udp:Close()
 
@@ -87,100 +129,51 @@ local function SendWOL()
 end
 
 -- -----------------------------------------------------------
--- SSH STUB
--- TODO: Replace with a bundled pure-Lua SSH implementation.
--- Options to evaluate:
---   • luassh (pure Lua, needs audit for Q-SYS compat)
---   • Custom TCP+exec workaround if Core exposes raw sockets
---   • Thin Windows-side agent accepting plain TCP to avoid SSH
---     entirely from the Lua side
---
--- For now this function logs the intended command so the rest
--- of the logic can be written and tested around it.
+-- COMMAND SENDERS
 -- -----------------------------------------------------------
-local function ssh_send(cmd)
-  dbg("Tx", "SSH [STUB] → " .. cmd)
-  -- TODO: open TCP connection to ip:22, authenticate with
-  -- sshUser + sshKey, exec cmd, return stdout as string.
-  return nil, "SSH not yet implemented"
-end
-
--- -----------------------------------------------------------
--- SSH COMMAND HELPERS
--- -----------------------------------------------------------
-
--- Write a command to the Windows Event Log (9001) so the
--- Scheduled Task picks it up and dispatches to QSYSControl.ps1
-local function WriteEventLog(command)
-  local ps = string.format(
-    [[powershell -NonInteractive -Command "Write-EventLog -LogName Application -Source QSYSControl -EventId 9001 -Message '%s'"]],
-    command
-  )
-  dbg("Tx", "EventLog cmd: " .. command)
-  local result, err = ssh_send(ps)
-  return result, err
-end
 
 local function SendShutdown()
-  dbg("Tx", "Sending shutdown command")
-  local _, err = ssh_send("shutdown /s /t 0")
-  if err then
-    print("[WinPC] Shutdown error: " .. err)
-  else
-    SetState("SHUTTING_DOWN")
-  end
+  dbg("Tx", "Sending SHUTDOWN")
+  http_post("SHUTDOWN", function(code, _, err)
+    if code == 200 then
+      SetState("SHUTTING_DOWN")
+    else
+      print("[WinPC] Shutdown failed: " .. tostring(err or code))
+    end
+  end)
 end
 
 local function SendVolume(pct)
-  WriteEventLog("VOLUME:" .. tostring(math.floor(pct)))
+  http_post("VOLUME:" .. tostring(math.floor(pct)))
 end
 
 local function SendMute(muted)
-  WriteEventLog("MUTE:" .. (muted and "1" or "0"))
-end
-
--- Read status.txt over SSH and return parsed table or nil
-local function ReadStatusFile()
-  local cmd = string.format([[powershell -NonInteractive -Command "Get-Content '%s'"]], statusPath)
-  local result, err = ssh_send(cmd)
-  if err or not result then return nil end
-
-  local status = {}
-  for line in result:gmatch("[^\r\n]+") do
-    local k, v = line:match("^(%a+):(.+)$")
-    if k and v then
-      status[k] = v:match("^%s*(.-)%s*$")  -- trim whitespace
-    end
-  end
-  return status
+  http_post("MUTE:" .. (muted and "1" or "0"))
 end
 
 -- -----------------------------------------------------------
--- TCP POLL  (probe port 3389 / RDP to determine online state)
+-- POLL TIMER  (HTTP GET /status every N seconds)
 -- -----------------------------------------------------------
 local pollTimer = Timer.New()
 
-local function UpdateLastPoll()
-  -- Q-SYS API: os.date is available in runtime
-  Controls.LastPoll.String = os.date("%Y-%m-%d %H:%M:%S")
+local function ParseStatus(body)
+  local status = {}
+  for line in body:gmatch("[^\r\n]+") do
+    local k, v = line:match("^(%u+):(.+)$")
+    if k and v then status[k] = v:match("^%s*(.-)%s*$") end
+  end
+  return status
 end
 
 local function DoPoll()
   if ip == "" then return end
 
-  local sock = TcpSocket.New()
-  sock.ReadTimeout  = 3
-  sock.WriteTimeout = 3
+  http_get_status(function(code, data, err)
+    if code == 200 and data then
+      -- Server responded — PC is online
+      if State ~= "ONLINE" then SetState("ONLINE") end
 
-  sock.Connected = function()
-    sock:Disconnect()
-    if State ~= "ONLINE" then
-      SetState("ONLINE")
-    end
-
-    -- Now fetch status file for volume/mute feedback
-    local status = ReadStatusFile()
-    if status then
+      local status = ParseStatus(data)
       if status.VOLUME then
         local v = tonumber(status.VOLUME)
         if v then Controls.Volume.Value = v end
@@ -188,33 +181,28 @@ local function DoPoll()
       if status.MUTE then
         Controls.Mute.Boolean = (status.MUTE == "1")
       end
-      UpdateLastPoll()
-      dbg("Rx", "Status: " .. (status.VOLUME or "?") .. "% mute=" .. (status.MUTE or "?"))
-    end
-  end
+      Controls.LastPoll.String = os.date("%Y-%m-%d %H:%M:%S")
+      dbg("Rx", "Vol=" .. (status.VOLUME or "?") .. " Mute=" .. (status.MUTE or "?"))
 
-  sock.Reconnect = function()
-    -- Connection refused or timed out — PC is offline
-    if State ~= "SHUTTING_DOWN" then
-      SetState("OFFLINE")
+    else
+      -- HTTP failed — PC offline, booting, or service not running
+      if State ~= "SHUTTING_DOWN" then
+        if State == "BOOTING" then
+          -- Stay in BOOTING — WOL was recently sent, keep waiting
+        else
+          SetState("OFFLINE")
+        end
+      end
+      if debugPrint ~= "None" then
+        print("[WinPC] Poll failed: " .. tostring(err or code))
+      end
     end
-  end
-
-  sock.Error = function(_, err)
-    if State ~= "SHUTTING_DOWN" then
-      SetState("OFFLINE")
-    end
-    if debugPrint ~= "None" then
-      print("[WinPC] TCP probe error: " .. tostring(err))
-    end
-  end
-
-  sock:Connect(ip, 3389)
+  end)
 end
 
 pollTimer.EventHandler = DoPoll
 
--- Guard: don't send audio commands when PC isn't up
+-- Guard: don't send audio/power commands when PC isn't up
 local function RequireOnline(label)
   if State ~= "ONLINE" then
     print("[WinPC] " .. label .. " ignored — PC is " .. State)
@@ -251,3 +239,4 @@ end
 SetState("OFFLINE")
 pollTimer:Start(pollInterval)
 print("[WinPC] Plugin started — polling every " .. pollInterval .. "s → " .. (ip ~= "" and ip or "(no IP)"))
+

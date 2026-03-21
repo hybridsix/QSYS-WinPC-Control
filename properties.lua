@@ -11,24 +11,19 @@ table.insert(props, {
   Value = ""
 })
 
--- SSH credentials
+-- HTTP listener
 table.insert(props, {
-  Name  = "SSH Username",
-  Type  = "string",
-  Value = "qsyscontrol"
+  Name  = "HTTP Port",
+  Type  = "integer",
+  Min   = 1024,
+  Max   = 65535,
+  Value = 2207
 })
 
 table.insert(props, {
-  Name  = "SSH Private Key",
+  Name  = "Auth Token",
   Type  = "string",
   Value = ""
-})
-
--- Windows-side paths
-table.insert(props, {
-  Name  = "Status File Path",
-  Type  = "string",
-  Value = [[C:\QSYSControl\status.txt]]
 })
 
 -- Polling

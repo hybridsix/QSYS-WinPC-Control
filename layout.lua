@@ -147,7 +147,7 @@ elseif CurrentPage == "Setup" then
     Fill        = { 220, 220, 220 },
     StrokeWidth = 0,
     Position    = { 0, 0 },
-    Size        = { 400, 155 }
+    Size        = { 400, 175 }
   })
 
   table.insert(graphics, {
@@ -157,7 +157,7 @@ elseif CurrentPage == "Setup" then
     StrokeWidth = 1,
     StrokeColor = { 150, 150, 150 },
     Position    = { 5, 5 },
-    Size        = { 390, 140 }
+    Size        = { 390, 160 }
   })
 
   local function cfg_label(text, y)
@@ -165,7 +165,7 @@ elseif CurrentPage == "Setup" then
       Type       = "Text",
       Text       = text,
       Position   = { 12, y },
-      Size       = { 105, 16 },
+      Size       = { 110, 16 },
       FontSize   = 11,
       HTextAlign = "Right",
       Color      = { 80, 80, 80 }
@@ -176,27 +176,38 @@ elseif CurrentPage == "Setup" then
     table.insert(graphics, {
       Type       = "Text",
       Text       = text,
-      Position   = { 122, y },
-      Size       = { 265, 16 },
+      Position   = { 127, y },
+      Size       = { 260, 16 },
       FontSize   = 11,
       HTextAlign = "Left",
       Color      = { 20, 20, 20 }
     })
   end
 
-  cfg_label("IP Address:",           24)
+  cfg_label("IP Address:",     24)
   cfg_value(props["IP Address"].Value ~= "" and props["IP Address"].Value or "(not set)", 24)
 
-  cfg_label("MAC Address:",          44)
+  cfg_label("MAC Address:",    44)
   cfg_value(props["MAC Address"].Value ~= "" and props["MAC Address"].Value or "(not set)", 44)
 
-  cfg_label("SSH Username:",         64)
-  cfg_value(props["SSH Username"].Value, 64)
+  cfg_label("HTTP Port:",      64)
+  cfg_value(tostring(props["HTTP Port"].Value), 64)
 
-  cfg_label("Poll Interval:",        84)
+  cfg_label("Poll Interval:",  84)
   cfg_value(tostring(props["Poll Interval"].Value) .. " seconds", 84)
 
-  cfg_label("Status File Path:",    104)
-  cfg_value(props["Status File Path"].Value, 104)
+  cfg_label("Auth Token:",    104)
+  local tokenSet = props["Auth Token"].Value ~= ""
+  cfg_value(tokenSet and "(configured)" or "NOT SET — run install.ps1 on PC first", 104)
+
+  table.insert(graphics, {
+    Type       = "Text",
+    Text       = "Token is stored in C:\\QSYSControl\\config.txt on the Windows PC.",
+    Position   = { 12, 130 },
+    Size       = { 375, 14 },
+    FontSize   = 9,
+    HTextAlign = "Left",
+    Color      = { 110, 110, 110 }
+  })
 
 end

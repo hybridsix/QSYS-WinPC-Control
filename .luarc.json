@@ -1,0 +1,36 @@
+{
+  "runtime": {
+    "version": "Lua 5.3"
+  },
+  "diagnostics": {
+    "globals": [
+      "PluginInfo",
+      "PageNames",
+      "props",
+      "ctrls",
+      "pins",
+      "pages",
+      "model",
+      "components",
+      "wiring",
+      "layout",
+      "graphics",
+      "Controls",
+      "Properties",
+      "Timer",
+      "TcpSocket",
+      "UdpSocket",
+      "System",
+      "Notifications",
+      "Component",
+      "Design",
+      "os"
+    ]
+  },
+  "workspace": {
+    "ignoreDir": [
+      "BasicPluginFramework",
+      "plugincompile"
+    ]
+  }
+}
