@@ -28,9 +28,7 @@
       "os"
     ],
     "disable": [
-      "assign-type-mismatch",
-      "duplicate-set-local",
-      "inject-field"
+      "duplicate-set-field"
     ]
   },
   "workspace": {

@@ -1,1 +1,1 @@
-table.insert(model, { "Windows PC" })
+table.insert(model, { "Win PC Control" })

@@ -27,7 +27,7 @@ if CurrentPage == "Control" then
   })
 
   layout["PowerOn"] = {
-    PrettyName = "Power~Power On",
+    PrettyName = "Power~Wake (WOL)",
     Style      = "Button",
     Legend     = "Power On",
     Position   = { 12, 23 },
@@ -66,14 +66,14 @@ if CurrentPage == "Control" then
   })
 
   layout["OnlineStatus"] = {
-    PrettyName = "Status~Online LED",
+    PrettyName = "Status~Online",
     Style      = "Indicator",
     Position   = { 70, 85 },
     Size       = { 20, 20 }
   }
 
   layout["StatusText"] = {
-    PrettyName = "Status~Status Text",
+    PrettyName = "Status~Text",
     Style      = "Text",
     Position   = { 97, 85 },
     Size       = { 190, 20 },

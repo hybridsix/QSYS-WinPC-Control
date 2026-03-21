@@ -1,14 +1,14 @@
--- QSYS WinPC Control Plugin
+-- Win PC Control Plugin
 -- Author: Michael King
 -- Q-SYS Designer v10+ / Core 8 Flex
 
 PluginInfo = {
-  Name        = "QSYS WinPC Control~PC",
+  Name        = "Hybridsix Plugins~Win PC Control",
   Version     = "0.1",
   BuildVersion= "0.1.0.1",
   Id          = "dd941513-d452-416e-95eb-b47d08457b36",
   Author      = "Michael King",
-  Description = "Remote control a Windows PC from Q-SYS: power (WOL), volume/mute (SSH), status polling (TCP/RDP)"
+  Description = "Remote control a Windows PC from Q-SYS: Wake-on-LAN power on, volume and mute via HTTP, and live status polling."
 }
 
 function GetColor(props)
@@ -18,9 +18,9 @@ end
 function GetPrettyName(props)
   local name = props["Computer Name"].Value
   if name ~= "" then
-    return "WinPC Control  |  " .. name
+    return "Win PC Control  |  " .. name
   end
-  return "WinPC Control  |  (unconfigured)"
+  return "Win PC Control  |  (unconfigured)"
 end
 
 PageNames = { "Control", "Setup" }
@@ -35,7 +35,7 @@ end
 
 function GetModel(props)
   local model = {}
-  table.insert(model, { "Windows PC" })
+  table.insert(model, { "Win PC Control" })
   return model
 end
 
@@ -255,7 +255,7 @@ function GetControlLayout(props)
     })
   
     layout["PowerOn"] = {
-      PrettyName = "Power~Power On",
+      PrettyName = "Power~Wake (WOL)",
       Style      = "Button",
       Legend     = "Power On",
       Position   = { 12, 23 },
@@ -294,14 +294,14 @@ function GetControlLayout(props)
     })
   
     layout["OnlineStatus"] = {
-      PrettyName = "Status~Online LED",
+      PrettyName = "Status~Online",
       Style      = "Indicator",
       Position   = { 70, 85 },
       Size       = { 20, 20 }
     }
   
     layout["StatusText"] = {
-      PrettyName = "Status~Status Text",
+      PrettyName = "Status~Text",
       Style      = "Text",
       Position   = { 97, 85 },
       Size       = { 190, 20 },
@@ -447,7 +447,7 @@ end
 
 if Controls then
   -- =============================================================
-  -- runtime.lua  —  QSYS WinPC Control
+  -- runtime.lua  —  Win PC Control
   -- Runs inside Q-SYS Core when the plugin is active.
   -- Transport: HTTP (QSYSControlServer.ps1 on Windows side)
   -- =============================================================

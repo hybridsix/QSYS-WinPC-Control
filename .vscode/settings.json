@@ -2,7 +2,7 @@
   "editor.renderControlCharacters": true,
   "files.associations": {
     "*.json": "jsonc",
-    "*.qplug": "lua"
+    "*.qplug": "plaintext"
   },
   "Lua.workspace.ignoreDir": [
     "BasicPluginFramework",

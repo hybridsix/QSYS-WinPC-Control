@@ -1,4 +1,4 @@
--- QSYS WinPC Control Plugin
+-- Win PC Control Plugin
 -- Author: Michael King
 -- Q-SYS Designer v10+ / Core 8 Flex
 
@@ -11,9 +11,9 @@ end
 function GetPrettyName(props)
   local name = props["Computer Name"].Value
   if name ~= "" then
-    return "WinPC Control  |  " .. name
+    return "Win PC Control  |  " .. name
   end
-  return "WinPC Control  |  (unconfigured)"
+  return "Win PC Control  |  (unconfigured)"
 end
 
 PageNames = { "Control", "Setup" }

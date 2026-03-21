@@ -1,5 +1,5 @@
 -- =============================================================
--- runtime.lua  —  QSYS WinPC Control
+-- runtime.lua  —  Win PC Control
 -- Runs inside Q-SYS Core when the plugin is active.
 -- Transport: HTTP (QSYSControlServer.ps1 on Windows side)
 -- =============================================================
