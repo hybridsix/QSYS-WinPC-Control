@@ -1,17 +1,13 @@
-# ============================================================
+# ================================================================
 # uninstall.ps1
 # Removes all WinPC Control components from this PC.
+# Run as Administrator.
 #
-# MUST be run as Administrator.
-#
-# What this script removes:
-#   - Scheduled Task
-#   - Windows Firewall rule
-#   - HTTP URL ACL reservation
-#   - C:\QSYS WinPC Control\ folder and all contents
+# Removes: Scheduled Task, Firewall rule, URL ACL,
+#          and C:\QSYS WinPC Control\
 #
 # Version: 0.1
-# ============================================================
+# ================================================================
 
 #Requires -RunAsAdministrator
 

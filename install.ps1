@@ -1,18 +1,7 @@
 # ============================================================
 # install.ps1
-# One-time setup for WinPC Control on a Windows 11 PC
-#
-# MUST be run as Administrator.
-# Run once per machine, once per user account that needs control.
-#
-# What this script does:
-#   1. Creates C:\QSYS WinPC Control\
-#   2. Copies server script there
-#   3. Generates a secure auth token and saves to config.txt
-#   4. Registers Windows HTTP URL ACL (allows non-admin to bind port)
-#   5. Adds Windows Firewall inbound rule for the control port
-#   6. Creates a Scheduled Task that starts the server at user logon
-#   7. Displays the auth token for entry into Q-SYS plugin properties
+# One-time setup for WinPC Control on a Windows 11 PC.
+# Run as Administrator. Run once per machine / per user account.
 #
 # Version: 0.1
 # ============================================================

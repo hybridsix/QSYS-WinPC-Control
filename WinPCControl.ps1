@@ -1,27 +1,22 @@
 # ============================================================
 # WinPCControl.ps1
-# Windows-side audio and power control script for Q-SYS integration
+# Windows-side audio control script for Q-SYS integration
 #
-# Triggered by:  Windows Scheduled Task watching Event ID 9001
-# Runs as:       Active desktop user (interactive session, audio access)
-# Called from:   Q-SYS plugin via SSH as network control user
+# Triggered by Windows Scheduled Task on Event ID 9001.
+# Runs in the interactive user session for audio API access.
 #
-# Commands accepted (via Windows Event Log message payload):
-#   VOLUME:0-100    Set master volume to specified percentage
-#   MUTE:1          Mute audio
-#   MUTE:0          Unmute audio
-#   QUERY:VOLUME    Force a status file refresh (Q-SYS polling)
-#
-# Status file written to $STATUS_FILE after every command.
-# Q-SYS reads this file over SSH to get current state feedback.
+# Commands (via Windows Event Log message payload):
+#   VOLUME:0-100    Set master volume
+#   MUTE:1 / MUTE:0 Mute / unmute
+#   QUERY:VOLUME    Force a status file refresh
 #
 # Version: 0.2
 # ============================================================
 
 
-# ============================================================
+# ===============================================
 # CONFIGURATION
-# ============================================================
+# ===============================================
 
 $STATUS_FILE  = "C:\QSYS WinPC Control\status.txt"
 $LOG_FILE     = "C:\QSYS WinPC Control\winpccontrol.log"
@@ -31,11 +26,9 @@ $EVENT_ID_IN  = 9001          # Q-SYS sends commands on this Event ID
 $EVENT_ID_OUT = 9002          # Reserved for future event-based status reporting
 
 
-# ============================================================
+# -------------------------------------------
 # LOGGING
-# Timestamped log entries written to $LOG_FILE
-# Useful for troubleshooting - readable over SSH
-# ============================================================
+# -------------------------------------------
 
 function Write-Log {
     param([string]$Message)
@@ -45,24 +38,21 @@ function Write-Log {
 }
 
 
-# ============================================================
+# ================================================================
 # WINDOWS CORE AUDIO API
-# Exposes volume and mute control via inline C#
-# Uses the IAudioEndpointVolume COM interface
-# No third-party software required - ships with Windows Vista+
-# ============================================================
+# Inline C# wrapping IAudioEndpointVolume -- no third-party deps.
+# ================================================================
 
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
-// --- COM Interface Definitions ---
-// These map directly to the Windows Core Audio API (mmdeviceapi.h / endpointvolume.h)
+// COM interface definitions (Windows Core Audio API)
+// Only methods we actually call are declared; partial COM interfaces are valid.
 
 [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IMMDevice {
     int Activate(ref Guid iid, uint dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-    // Remaining methods not needed - partial interface definition is valid for COM
     int OpenPropertyStore(uint stgmAccess, out IntPtr ppProperties);
     int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
     int GetState(out uint pdwState);
@@ -72,44 +62,31 @@ interface IMMDevice {
 interface IMMDeviceEnumerator {
     int EnumAudioEndpoints(uint dataFlow, uint dwStateMask, out IntPtr ppDevices);
     int GetDefaultAudioEndpoint(uint dataFlow, uint role, out IMMDevice ppEndpoint);
-    // Remaining methods omitted
 }
 
 [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IAudioEndpointVolume {
-    // RegisterControlChangeNotify / UnregisterControlChangeNotify
     int RegisterControlChangeNotify(IntPtr pNotify);
     int UnregisterControlChangeNotify(IntPtr pNotify);
-    // Channel count
     int GetChannelCount(out uint pnChannelCount);
-    // Master volume as scalar (0.0 - 1.0)
     int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
     int GetMasterVolumeLevelScalar(out float pfLevel);
-    // Per-channel volume (not used here)
     int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, ref Guid pguidEventContext);
     int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
-    // Mute
     int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);
     int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
-    // Volume step info (not used here)
     int GetVolumeStepInfo(out uint pnStep, out uint pnStepCount);
     int VolumeStepUp(ref Guid pguidEventContext);
     int VolumeStepDown(ref Guid pguidEventContext);
     int QueryHardwareSupport(out uint pdwHardwareSupportMask);
-    // Volume range in dB (not used here)
     int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);
 }
 
-// --- MMDeviceEnumerator CLSID and IMMDeviceEnumerator IID ---
-[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-class MMDeviceEnumeratorClass {}
-
-// --- AudioHelper: Public API used by this script ---
+// AudioHelper: public API used by this script
 public static class AudioHelper {
 
     // Get the default audio playback endpoint's volume interface
     private static IAudioEndpointVolume GetVolumeInterface() {
-        // CoCreateInstance equivalent - instantiate the device enumerator
         var enumeratorType = Type.GetTypeFromCLSID(new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"));
         var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(enumeratorType);
 
@@ -117,7 +94,6 @@ public static class AudioHelper {
         IMMDevice device;
         enumerator.GetDefaultAudioEndpoint(0, 1, out device);
 
-        // Activate IAudioEndpointVolume on the device
         Guid iid = typeof(IAudioEndpointVolume).GUID;
         object volumeObj;
         device.Activate(ref iid, 1, IntPtr.Zero, out volumeObj);
@@ -125,7 +101,7 @@ public static class AudioHelper {
         return (IAudioEndpointVolume)volumeObj;
     }
 
-    // Set master volume: accepts 0-100 integer, converts to 0.0-1.0 scalar
+    // Set master volume: 0-100 int, converted to 0.0-1.0 scalar
     public static void SetVolume(int percent) {
         var vol = GetVolumeInterface();
         float scalar = Math.Max(0f, Math.Min(1f, percent / 100f));
@@ -133,7 +109,7 @@ public static class AudioHelper {
         vol.SetMasterVolumeLevelScalar(scalar, ref empty);
     }
 
-    // Get master volume: returns 0-100 integer
+    // Get master volume: returns 0-100 int
     public static int GetVolume() {
         var vol = GetVolumeInterface();
         float scalar;
@@ -141,14 +117,14 @@ public static class AudioHelper {
         return (int)Math.Round(scalar * 100);
     }
 
-    // Set mute state: true = muted, false = unmuted
+    // Set mute
     public static void SetMute(bool muted) {
         var vol = GetVolumeInterface();
         Guid empty = Guid.Empty;
         vol.SetMute(muted, ref empty);
     }
 
-    // Get mute state: returns true if muted
+    // Get mute
     public static bool GetMute() {
         var vol = GetVolumeInterface();
         bool muted;
@@ -159,10 +135,9 @@ public static class AudioHelper {
 "@
 
 
-# ============================================================
+# ============================================
 # VOLUME AND MUTE FUNCTIONS
-# Thin wrappers around AudioHelper that add logging
-# ============================================================
+# ============================================
 
 function Set-MasterVolume {
     param([int]$Percent)
@@ -182,7 +157,7 @@ function Get-MasterVolume {
     }
     catch {
         Write-Log "ERROR reading volume: $_"
-        return -1   # Sentinel value - Q-SYS treats -1 as unknown
+        return -1   # Q-SYS treats -1 as unknown
     }
 }
 
@@ -210,19 +185,12 @@ function Get-MasterMute {
 }
 
 
-# ============================================================
+# -----------------------------------------------
 # STATUS FILE
-# Written after every command execution
-# Q-SYS polls this file over SSH to get current audio state
+# Written after every command execution.
 #
-# Format:
-#   VOLUME:65
-#   MUTE:0
-#   UPDATED:2024-01-15 14:32:01
-#
-# Atomic write (temp file + rename) prevents Q-SYS from reading
-# a partially written file during a polling cycle
-# ============================================================
+# Atomic write (temp + rename) prevents partial reads.
+# -----------------------------------------------
 
 function Update-StatusFile {
     try {
@@ -246,11 +214,10 @@ function Update-StatusFile {
 }
 
 
-# ============================================================
+# ================================================================
 # EVENT LOG READER
-# Retrieves the most recent command sent by Q-SYS
-# Q-SYS writes to Event ID 9001 via SSH / Write-EventLog
-# ============================================================
+# Retrieves the most recent command sent by Q-SYS (Event ID 9001)
+# ================================================================
 
 function Get-LatestCommand {
     try {
@@ -277,13 +244,7 @@ function Get-LatestCommand {
 
 # ============================================================
 # COMMAND ROUTER
-# Parses the "COMMAND:VALUE" message format and dispatches
-# to the appropriate handler function
-#
-# Supported commands:
-#   VOLUME:0-100     e.g. "VOLUME:75"
-#   MUTE:0 or MUTE:1 e.g. "MUTE:1"
-#   QUERY:VOLUME     Forces a status file refresh
+# Parses "COMMAND:VALUE" and dispatches to handler functions.
 # ============================================================
 
 function Invoke-QSYSCommand {
@@ -335,10 +296,9 @@ function Invoke-QSYSCommand {
 }
 
 
-# ============================================================
-# MAIN EXECUTION
-# Entry point when the Scheduled Task fires
-# ============================================================
+# ----------------------------
+# MAIN
+# ----------------------------
 
 Write-Log "=== WinPCControl triggered ==="
 

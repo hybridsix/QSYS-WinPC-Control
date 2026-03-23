@@ -18,12 +18,10 @@
 -- =============================================================
 
 
--- =============================================================
--- SECTION 1: CONFIGURATION
--- Pull all user-set property values once at startup. These do
--- not change while the plugin is running -- a re-deploy is
--- required if properties are changed.
--- =============================================================
+-- -------------------------------------------------------------
+-- Configuration
+-- Pull property values once at startup.
+-- -------------------------------------------------------------
 
 local host         = Properties["Hostname or IP"].Value
 local macProperty  = Properties["MAC Address"].Value
@@ -32,11 +30,7 @@ local authToken    = Properties["Auth Token"].Value
 local pollInterval = Properties["Poll Interval"].Value
 local debugPrint   = Properties["Debug Print"].Value
 
--- Build the base URL once so we don't repeat the format call everywhere.
--- Example: "http://192.168.1.50:2207"
 local baseUrl    = string.format("http://%s:%d", host, httpPort)
-
--- Pre-build the auth header table used on every GET /status request.
 local authHeader = { Authorization = "Bearer " .. authToken }
 
 -- cachedMac holds the MAC address used for Wake-on-LAN.
@@ -48,21 +42,15 @@ local authHeader = { Authorization = "Bearer " .. authToken }
 local cachedMac = (macProperty ~= "") and macProperty or nil
 
 
--- =============================================================
--- SECTION 2: STATE MACHINE
+-- -------------------------------------------------------------
+-- State machine
 --
--- The plugin tracks which of four states the PC is believed to be in.
--- State drives the status LED, status text, and guards against sending
--- commands to a PC that cannot receive them.
---
--- States:
---   OFFLINE       -- No response from the server. PC is off or unreachable.
---   BOOTING       -- WOL was just sent. Waiting for the server to come up.
---                    Poll failures in this state do NOT flip back to OFFLINE
---                    immediately, because the PC needs time to POST and boot.
---   ONLINE        -- Server responded with HTTP 200. PC is up and running.
---   SHUTTING_DOWN -- Shutdown command was accepted. Waiting for it to drop off.
--- =============================================================
+-- OFFLINE       - no response from the server
+-- BOOTING       - WOL sent, waiting for the server to come up
+--                 (poll failures here don't immediately flip to OFFLINE)
+-- ONLINE        - server responded HTTP 200
+-- SHUTTING_DOWN - shutdown accepted, waiting for the PC to drop off
+-- -------------------------------------------------------------
 
 local State = "OFFLINE"
 
@@ -98,13 +86,9 @@ local function SetState(newState)
 end
 
 
--- =============================================================
--- SECTION 3: DEBUG HELPER
---
--- Prints Tx/Rx messages to the Q-SYS Core log when Debug Print
--- is set to "Tx/Rx" or "All" in the plugin properties.
--- "dir" should be "Tx" or "Rx" to indicate direction.
--- =============================================================
+-- -------------------------------------------------------------
+-- Debug helper -- prints Tx/Rx when Debug Print is Tx/Rx or All
+-- -------------------------------------------------------------
 
 local function dbg(dir, msg)
   if debugPrint == "All" or debugPrint == "Tx/Rx" then
@@ -113,15 +97,9 @@ local function dbg(dir, msg)
 end
 
 
--- =============================================================
--- SECTION 4: HTTP TRANSPORT
---
--- Two functions wrap HttpClient.Download for our two endpoints.
--- HttpClient is a native Q-SYS v10+ API -- no third-party libs needed.
---
--- All requests include the Bearer token header for authentication.
--- The server returns 401 if the token doesn't match, and 200 on success.
--- =============================================================
+-- -------------------------------------------------------------
+-- HTTP transport
+-- -------------------------------------------------------------
 
 -- http_post(cmd, callback)
 --   Sends a POST request to /command with a plain-text body.
@@ -181,22 +159,12 @@ local function http_get_status(callback)
 end
 
 
--- =============================================================
--- SECTION 5: WAKE-ON-LAN
---
--- Sends a standard WOL magic packet to the global UDP broadcast
--- address (255.255.255.255) on port 9.
---
--- Magic packet format:
---   6 bytes of 0xFF, followed by the target MAC address repeated 16 times.
---   Total: 102 bytes.
---
--- Requirements:
---   - The PC must have "Wake on LAN" enabled in its BIOS/UEFI.
---   - The NIC must have WOL enabled in Windows Device Manager.
---   - The Q-SYS Core and the PC must be on the same Layer 2 network
---     segment (or the router must forward directed broadcasts).
--- =============================================================
+-- -------------------------------------------------------------
+-- Wake-on-LAN
+-- Broadcasts the standard 102-byte magic packet on UDP port 9.
+-- Requires WOL enabled in BIOS and the NIC driver, and the Core
+-- must be on the same L2 segment as the target PC.
+-- -------------------------------------------------------------
 
 local function SendWOL()
   local mac = cachedMac
@@ -242,13 +210,9 @@ local function SendWOL()
 end
 
 
--- =============================================================
--- SECTION 6: COMMAND SENDERS
---
--- These functions translate button presses and control changes
--- into HTTP POST commands to the Windows server.
--- Command strings must match what WinPCControlServer.ps1 expects.
--- =============================================================
+-- -------------------------------------------------------------
+-- Command senders
+-- -------------------------------------------------------------
 
 -- Tell the PC to shut down. If the server confirms with 200, we move
 -- to SHUTTING_DOWN state so polls don't immediately flip back to OFFLINE.
@@ -275,25 +239,14 @@ local function SendMute(muted)
 end
 
 
--- =============================================================
--- SECTION 7: POLL TIMER
---
--- A Timer fires every N seconds (set by the Poll Interval property)
--- and sends a GET /status to check whether the PC is up and to
--- sync volume/mute values back to Q-SYS.
---
--- The response body is plain text with one KEY:VALUE pair per line.
--- ParseStatus() converts that into a Lua table for easy access.
--- =============================================================
+-- -------------------------------------------------------------
+-- Poll timer
+-- Fires every N seconds, sends GET /status, syncs volume and mute.
+-- -------------------------------------------------------------
 
 local pollTimer = Timer.New()
 
--- ParseStatus(body)
---   Converts the plain-text status body into a key/value table.
---   Input example:
---     "VOLUME:75\r\nMUTE:0\r\nMAC:AA:BB:CC:DD:EE:FF\r\nUPDATED:2026-03-20 14:30:00"
---   Output example:
---     { VOLUME="75", MUTE="0", MAC="AA:BB:CC:DD:EE:FF", UPDATED="2026-03-20 14:30:00" }
+-- ParseStatus: converts the plain-text /status body into a key/value table.
 local function ParseStatus(body)
   local status = {}
   for line in body:gmatch("[^\r\n]+") do
@@ -372,13 +325,9 @@ end
 pollTimer.EventHandler = DoPoll
 
 
--- =============================================================
--- SECTION 8: GUARD FUNCTION
---
--- Prevents sending audio/power commands when the PC is not ONLINE.
--- Returns true if the command should proceed, false if it should be
--- silently dropped (with a log message for debugging).
--- =============================================================
+-- -------------------------------------------------------------
+-- Guard: drops commands silently if the PC isn't ONLINE.
+-- -------------------------------------------------------------
 
 local function RequireOnline(label)
   if State ~= "ONLINE" then
@@ -389,13 +338,9 @@ local function RequireOnline(label)
 end
 
 
--- =============================================================
--- SECTION 9: CONTROL EVENT HANDLERS
---
--- These wire up the Q-SYS Controls (buttons, knobs) to the
--- functions above. Each handler fires when the operator interacts
--- with the control on a UCI or the schematic.
--- =============================================================
+-- -------------------------------------------------------------
+-- Control event handlers
+-- -------------------------------------------------------------
 
 -- PowerOn: Sends a Wake-on-LAN magic packet.
 -- This works even when the PC is OFFLINE -- that's the whole point.
@@ -423,12 +368,9 @@ Controls.Mute.EventHandler = function()
 end
 
 
--- =============================================================
--- SECTION 10: STARTUP
---
--- Set initial state and start the poll timer.
--- This code runs once when the Q-SYS Core loads the plugin.
--- =============================================================
+-- -------------------------------------------------------------
+-- Startup
+-- -------------------------------------------------------------
 
 SetState("OFFLINE")
 pollTimer:Start(pollInterval)

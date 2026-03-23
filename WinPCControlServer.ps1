@@ -1,28 +1,24 @@
-# ============================================================
+# ================================================================
 # WinPCControlServer.ps1
-# Persistent HTTP control server for Q-SYS WinPC Control plugin
+# Persistent HTTP control server for Q-SYS WinPC Control plugin.
 #
-# Must run in the INTERACTIVE USER SESSION for audio API access.
-# Started automatically at user logon by Windows Scheduled Task
-# (installed by install.ps1).
+# Runs in the interactive user session (required for audio API).
+# Started at logon by a Scheduled Task installed by install.ps1.
 #
 # Endpoints (all require Authorization: Bearer <token>):
 #   GET  /status    Returns current volume, mute state, timestamp
 #   POST /command   Accepts VOLUME:N  MUTE:0  MUTE:1  SHUTDOWN
 #
-# Config read from: C:\QSYS WinPC Control\config.txt
-#   PORT=2207
-#   TOKEN=<base64 token>
-#
-# Logs written to: C:\QSYS WinPC Control\server.log
+# Config: C:\QSYS WinPC Control\config.txt  (PORT=, TOKEN=)
+# Log:    C:\QSYS WinPC Control\server.log
 #
 # Version: 0.1
-# ============================================================
+# ================================================================
 
 
-# ============================================================
+# ============================================
 # CONFIGURATION
-# ============================================================
+# ============================================
 
 $WORK_DIR   = "C:\QSYS WinPC Control"
 $CONFIG_FILE = "$WORK_DIR\config.txt"
@@ -50,11 +46,11 @@ if ($Token -eq "") {
 }
 
 
-# ============================================================
+# -----------------------------------------------
 # LOGGING
-# Max log size is capped at $LOG_MAX_LINES lines.
-# The file is trimmed on startup and every 100 log writes.
-# ============================================================
+# Max log size capped at $LOG_MAX_LINES lines.
+# Trimmed on startup and every 100 writes.
+# -----------------------------------------------
 
 $LOG_MAX_LINES       = 500
 $script:_logWriteCount = 0
@@ -78,7 +74,7 @@ function Trim-Log {
 
 
 # ============================================================
-# WINDOWS CORE AUDIO API  (inline — no dependency on WinPCControl.ps1)
+# WINDOWS CORE AUDIO API  (inline C#, no third-party deps)
 # ============================================================
 
 Add-Type -TypeDefinition @"
@@ -159,9 +155,9 @@ public static class AudioHelper {
 "@
 
 
-# ============================================================
+# ----------------------------
 # AUDIO HELPERS
-# ============================================================
+# ----------------------------
 
 function Get-MasterVolume {
     try   { return [AudioHelper]::GetVolume() }
@@ -185,7 +181,7 @@ function Set-MasterMute ([bool]$Muted) {
 
 
 # ============================================================
-# COMMAND ROUTER  (same logic as WinPCControl.ps1)
+# COMMAND ROUTER
 # ============================================================
 
 function Invoke-QSYSCommand {
@@ -228,9 +224,9 @@ function Invoke-QSYSCommand {
 }
 
 
-# ============================================================
+# ===============================================
 # HTTP RESPONSE HELPERS
-# ============================================================
+# ===============================================
 
 function Send-Response {
     param(
@@ -272,9 +268,9 @@ function Get-StatusBody {
 }
 
 
-# ============================================================
+# ================================================================
 # HTTP LISTENER LOOP
-# ============================================================
+# ================================================================
 
 # Ensure work dir exists
 if (-not (Test-Path $WORK_DIR)) {
