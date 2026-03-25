@@ -29,7 +29,7 @@ function Write-OK ([string]$msg) {
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor White
-Write-Host "  WinPC Control  —  Uninstall" -ForegroundColor White
+Write-Host "  WinPC Control - Uninstall" -ForegroundColor White
 Write-Host "================================================" -ForegroundColor White
 
 # Read port from config if present (overrides param default)
@@ -84,7 +84,7 @@ try {
         Write-OK "$WORK_DIR removed"
     }
     else {
-        Write-OK "$WORK_DIR not found — nothing to remove"
+        Write-OK "$WORK_DIR not found - nothing to remove"
     }
 }
 catch {

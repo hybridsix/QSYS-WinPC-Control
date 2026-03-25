@@ -170,12 +170,12 @@ function Get-MasterMute {
 }
 
 function Set-MasterVolume ([int]$Percent) {
-    try   { [AudioHelper]::SetVolume($Percent); Write-Log "Volume → $Percent%" }
+    try   { [AudioHelper]::SetVolume($Percent); Write-Log "Volume set to $Percent%" }
     catch { Write-Log "ERROR setting volume: $_"; throw }
 }
 
 function Set-MasterMute ([bool]$Muted) {
-    try   { [AudioHelper]::SetMute($Muted); Write-Log "Mute → $Muted" }
+    try   { [AudioHelper]::SetMute($Muted); Write-Log "Mute set to $Muted" }
     catch { Write-Log "ERROR setting mute: $_"; throw }
 }
 
@@ -209,12 +209,12 @@ function Invoke-QSYSCommand {
             else { Write-Log "ERROR: bad mute value '$value'" }
         }
         "SHUTDOWN" {
-            Write-Log "Shutdown command received — initiating"
+            Write-Log "Shutdown command received - initiating"
             Start-Sleep -Seconds 1   # Allow HTTP response to complete first
             & shutdown /s /t 0
         }
         "QUERY" {
-            # No-op — status is always returned in the response body
+            # No-op - status is always returned in the response body
             Write-Log "QUERY received"
         }
         default {
@@ -333,7 +333,7 @@ while ($listener.IsListening) {
         }
     }
     catch [System.Net.HttpListenerException] {
-        # Normal on listener.Stop() — exit cleanly
+        # Normal on listener.Stop() - exit cleanly
         break
     }
     catch {

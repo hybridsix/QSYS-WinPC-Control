@@ -34,7 +34,7 @@ function Write-Fail ([string]$msg) {
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor White
-Write-Host "  WinPC Control  —  Windows Setup" -ForegroundColor White
+Write-Host "  WinPC Control - Windows Setup" -ForegroundColor White
 Write-Host "================================================" -ForegroundColor White
 Write-Host "  Port:  $Port"
 Write-Host "  User:  $env:USERNAME"
@@ -60,7 +60,7 @@ if (-not (Test-Path $source)) {
 }
 try {
     Copy-Item -Path $source -Destination "$WORK_DIR\$SERVER_SCRIPT" -Force
-    Write-OK "Copied $SERVER_SCRIPT → $WORK_DIR"
+    Write-OK "Copied $SERVER_SCRIPT to $WORK_DIR"
 }
 catch {
     Write-Fail "Could not copy script: $_"
@@ -137,13 +137,13 @@ try {
     $settings  = New-ScheduledTaskSettingsSet `
                     -AllowStartIfOnBatteries `
                     -DontStopIfGoingOnBatteries `
-                    -ExecutionTimeLimit ([TimeSpan]::Zero)   # No timeout — runs forever
+                    -ExecutionTimeLimit ([TimeSpan]::Zero)   # No timeout - runs forever
 
     # Interactive logon type ensures audio API access (runs in user session)
     $principal = New-ScheduledTaskPrincipal `
                     -UserId   "$env:USERDOMAIN\$env:USERNAME" `
                     -LogonType Interactive `
-                    -RunLevel  Limited   # Non-elevated — audio requires this
+                    -RunLevel  Limited   # Non-elevated - audio requires this
 
     Register-ScheduledTask `
         -TaskName  $TASK_NAME `
@@ -161,12 +161,13 @@ catch {
 
 
 # ---- Step 7: Log install and display token ----
-$installRecord = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Installed by $env:USERNAME on $env:COMPUTERNAME (port $Port)"
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$installRecord = "[$timestamp] Installed by $env:USERNAME on $env:COMPUTERNAME (port $Port)"
 Add-Content -Path $LOG_FILE -Value $installRecord
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Green
-Write-Host "  WinPC Control — Installation complete!" -ForegroundColor Green
+Write-Host "  WinPC Control - Installation complete!" -ForegroundColor Green
 Write-Host "================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Copy this token into the Q-SYS plugin properties:" -ForegroundColor Yellow
