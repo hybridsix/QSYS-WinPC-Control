@@ -177,5 +177,5 @@ Write-Host "  The server will start automatically the next time" -ForegroundColo
 Write-Host "  $env:USERNAME logs into this PC." -ForegroundColor Gray
 Write-Host ""
 Write-Host "  To start it now without logging out/in, run:" -ForegroundColor Gray
-Write-Host "  Start-ScheduledTask -TaskName '$TASK_NAME'" -ForegroundColor Gray
+Write-Host "  Start-ScheduledTask -TaskName `"$TASK_NAME`"" -ForegroundColor Gray
 Write-Host ""
