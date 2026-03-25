@@ -304,7 +304,7 @@ local function DoPoll()
         if cachedMac ~= status.MAC then
           cachedMac = status.MAC
           Properties["MAC Address"].Value = cachedMac
-          dbg("Rx", "MAC auto-discovered and saved: " .. cachedMac)
+          dbg("Rx", "MAC auto-discovered: " .. cachedMac .. " (saved to property)")
         end
       end
 

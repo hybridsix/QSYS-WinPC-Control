@@ -302,6 +302,8 @@ while ($listener.IsListening) {
         $method = $request.HttpMethod.ToUpper()
         $path   = $request.Url.AbsolutePath.ToLower().TrimEnd("/")
 
+        Write-Log "$method $path from $($request.RemoteEndPoint)"
+
         # ---- Auth check ----
         $authHeader = $request.Headers["Authorization"]
         if ($authHeader -ne "Bearer $Token") {
