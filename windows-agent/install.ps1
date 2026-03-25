@@ -9,7 +9,8 @@
 #Requires -RunAsAdministrator
 
 param(
-    [int]$Port = 2207
+    [int]$Port = 2207,
+    [string]$Token = ""
 )
 
 $WORK_DIR      = "C:\QSYS WinPC Control"
@@ -70,15 +71,19 @@ catch {
 # ---- Step 3: Generate auth token and write config ----
 Write-Step "Generating auth token"
 try {
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $tokenBytes = New-Object byte[] 32
-    $rng.GetBytes($tokenBytes)
-    $rng.Dispose()
-    $token = [System.Convert]::ToBase64String($tokenBytes)
+    if ($Token -ne "") {
+        Write-Host "     Using supplied token." -ForegroundColor Gray
+    } else {
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $tokenBytes = New-Object byte[] 32
+        $rng.GetBytes($tokenBytes)
+        $rng.Dispose()
+        $Token = [System.Convert]::ToBase64String($tokenBytes)
+    }
 
-    $configContent = "PORT=$Port`r`nTOKEN=$token`r`n"
+    $configContent = "PORT=$Port`r`nTOKEN=$Token`r`n"
     Set-Content -Path $CONFIG_FILE -Value $configContent -NoNewline
-    Write-OK "Token generated and saved to $CONFIG_FILE"
+    Write-OK "Token saved to $CONFIG_FILE"
 }
 catch {
     Write-Fail "Could not generate token: $_"
@@ -175,7 +180,7 @@ Write-Host "================================================" -ForegroundColor G
 Write-Host ""
 Write-Host "  Copy this token into the Q-SYS plugin properties:" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "  $token" -ForegroundColor White
+Write-Host "  $Token" -ForegroundColor White
 Write-Host ""
 Write-Host "  The server will start automatically the next time" -ForegroundColor Gray
 Write-Host "  $env:USERNAME logs into this PC." -ForegroundColor Gray
