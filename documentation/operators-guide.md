@@ -96,7 +96,7 @@ The Setup tab shows a read-only summary of the current configuration. If somethi
 | Poll Interval (s) | How often the plugin checks in with the PC |
 | Auth Token | Shows **(configured)** or **NOT SET** |
 
-If Auth Token shows **NOT SET**, the plugin cannot communicate with the PC. Re-run `install.ps1` on the PC and paste the generated token into the Auth Token property.
+If Auth Token shows **NOT SET**, the plugin cannot communicate with the PC. Re-run `install.ps1` from the `windows-agent/` folder on the PC and paste the generated token into the Auth Token property.
 
 ---
 
@@ -153,4 +153,4 @@ If your design is wired to control this plugin from UCI buttons, a touch panel, 
 
 **Updating the plugin:** Replace the `.qplug` file in the Q-SYS Designer plugins folder and reload the design. Existing property values (IP, token, etc.) are preserved as long as the plugin GUID hasn't changed.
 
-**Updating the server script:** Copy the new `WinPCControlServer.ps1` to `C:\QSYS WinPC Control\` on the PC and restart the task. The auth token and port are preserved in `config.txt` - no need to re-run `install.ps1` for script-only updates.
+**Updating the server script:** Copy the new `WinPCControlServer.ps1` from `windows-agent/` to `C:\QSYS WinPC Control\` on the PC and restart the task. The auth token and port are preserved in `config.txt` - no need to re-run `install.ps1` for script-only updates.

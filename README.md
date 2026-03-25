@@ -54,7 +54,8 @@ The Q-SYS plugin polls the server at a configurable interval (default 30 s) and 
 
 ### 1. Windows PC setup
 
-Copy `install.ps1` and `WinPCControlServer.ps1` to the same folder on the target PC, then run `install.ps1` **as Administrator** in PowerShell:
+The `windows-agent/` folder in this repo contains everything the PC needs.
+Copy that folder (or just its contents) to the Windows PC, then run `install.ps1` **as Administrator**:
 
 ```powershell
 .\install.ps1
@@ -145,9 +146,9 @@ This is useful when the PC is connected to a fixed-level system and you want to 
 
 | File | Where | Purpose |
 |---|---|---|
-| `install.ps1` | Windows PC | One-time setup - run as Administrator |
-| `WinPCControlServer.ps1` | Windows PC (`C:\QSYS WinPC Control\`) | The HTTP server - do not run manually |
-| `uninstall.ps1` | Windows PC | Clean removal - run as Administrator |
+| `windows-agent/install.ps1` | Run on Windows PC (as Administrator) | One-time setup |
+| `windows-agent/WinPCControlServer.ps1` | Copied to `C:\QSYS WinPC Control\` by installer | The HTTP server - do not run manually |
+| `windows-agent/uninstall.ps1` | Run on Windows PC (as Administrator) | Clean removal |
 | `QSYS WinPC Control.qplug` | Q-SYS Designer plugins folder | The compiled plugin |
 | `C:\QSYS WinPC Control\config.txt` | Windows PC | PORT= and TOKEN= - do not edit manually |
 | `C:\QSYS WinPC Control\server.log` | Windows PC | Rolling server log (capped at 500 lines) |
