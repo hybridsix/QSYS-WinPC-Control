@@ -46,7 +46,7 @@ Double-click the plugin block in the schematic to open the panel. It has two tab
 
 | Button | What it does |
 |---|---|
-| **Power On (WOL)** | Sends a Wake-on-LAN magic packet to the PC's MAC address. Works from any state, including when the PC is off. The status will change to **Booting...** and then to **Online** once the PC is up (typically 30-60 seconds). |
+| **Power On (WOL)** | Sends a Wake-on-LAN magic packet to the PC's MAC address (3 bursts on both ports 7 and 9 for reliability). Works from any state, including when the PC is off. If the PC is already **Online**, the magic packet is still sent but the status stays **Online** so volume/mute controls keep working. Otherwise, the status changes to **Booting...** and then to **Online** once the PC is up (typically 30-60 seconds). If the PC doesn't come online within 120 seconds, the status automatically returns to **Offline**. |
 | **Shutdown** | Sends a graceful shutdown command to Windows. Only works when the PC is **Online**. The status changes to **Shutting Down...** and then to **Offline** once the server stops responding. |
 
 #### Connection Status
@@ -61,7 +61,7 @@ Double-click the plugin block in the schematic to open the panel. It has two tab
 
 | Control | What it does |
 |---|---|
-| **Volume fader** | Sets Windows master volume (0-100). Moves automatically when the PC volume changes from another source. |
+| **Volume fader** | Sets Windows master volume (0-100). The fader is debounced — commands are not sent while you are dragging. After you release the fader (300ms of no movement), the plugin ramps smoothly from the current PC volume to the new target over the configured **Volume Ramp Time** (default 1 second, configurable 0–10s in Properties; 0 = instant). The fader also moves automatically when the PC volume changes from another source. |
 | **Mute button** | Toggles Windows master mute (red = muted). When you unmute, the volume is restored to what it was before muting. |
 | **Vol Min / Vol Max** | Clamps the volume range. Commands outside this range are automatically clamped. The fader is also clamped. |
 | **Out of Range LED** | Lights amber if the PC is reporting a volume level outside the Min/Max limits you've set. |
@@ -93,7 +93,8 @@ The Setup tab shows a read-only summary of the current configuration. If somethi
 | Hostname / IP | The address the plugin connects to |
 | MAC Address | Used for Wake-on-LAN - auto-discovered after first poll and saved to the property automatically |
 | HTTP Port | The port the server is listening on (default 2207) |
-| Poll Interval (s) | How often the plugin checks in with the PC |
+| Poll Interval (s) | How often the plugin checks in with the PC (default 15s) |
+| Vol Ramp Time | Seconds to ramp from current to new volume after releasing the fader (default 1s, 0 = instant) |
 | Auth Token | Shows **(configured)** or **NOT SET** |
 
 If Auth Token shows **NOT SET**, the plugin cannot communicate with the PC. Re-run `install.ps1` from the `windows-agent/` folder on the PC and paste the generated token into the Auth Token property.
@@ -118,7 +119,7 @@ The PC is reporting a volume level outside the Vol Min / Vol Max range you've co
 
 ### Status is stuck on Booting...
 
-The PC may have woken up but the server didn't start. Check:
+The plugin has a 120-second safety timeout — if the PC doesn't come online within 2 minutes of a WOL, the status automatically returns to **Offline**. If this keeps happening, check:
 - The user account is logged in (the server requires an active user session)
 - Task Scheduler -> `WinPC Control Server` task exists and is enabled
 - No error in `C:\QSYS WinPC Control\server.log` on the PC
