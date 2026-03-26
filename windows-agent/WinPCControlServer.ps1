@@ -131,9 +131,18 @@ public static class AudioHelper {
 
     public static void SetVolume(int percent) {
         var vol = GetVolumeInterface();
-        float scalar = Math.Max(0f, Math.Min(1f, percent / 100f));
         Guid empty = Guid.Empty;
-        vol.SetMasterVolumeLevelScalar(scalar, ref empty);
+        float scalar;
+        vol.GetMasterVolumeLevelScalar(out scalar);
+        int current = (int)Math.Round(scalar * 100);
+        int delta = percent - current;
+        int steps = Math.Abs(delta);
+        // Safety cap to prevent runaway loops
+        if (steps > 100) steps = 100;
+        for (int i = 0; i < steps; i++) {
+            if (delta > 0) vol.VolumeStepUp(ref empty);
+            else           vol.VolumeStepDown(ref empty);
+        }
     }
 
     public static int GetVolume() {
@@ -177,7 +186,11 @@ function Get-MasterMute {
 }
 
 function Set-MasterVolume ([int]$Percent) {
-    try   { [AudioHelper]::SetVolume($Percent); Write-Log "Volume set to $Percent%" }
+    try {
+        [AudioHelper]::SetVolume($Percent)
+        $readBack = [AudioHelper]::GetVolume()
+        Write-Log "Volume set to $Percent% (readBack=$readBack%)"
+    }
     catch { Write-Log "ERROR setting volume: $_"; throw }
 }
 
@@ -218,7 +231,7 @@ function Invoke-QSYSCommand {
         "SHUTDOWN" {
             Write-Log "Shutdown command received - initiating"
             Start-Sleep -Seconds 1   # Allow HTTP response to complete first
-            & shutdown /s /t 0
+            & shutdown /s /f /t 0
         }
         "QUERY" {
             # No-op - status is always returned in the response body

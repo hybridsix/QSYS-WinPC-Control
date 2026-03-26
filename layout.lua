@@ -85,6 +85,7 @@ if CurrentPage == "Control" then
   layout["OnlineStatus"] = {
     PrettyName = "Status~Online",
     Style      = "Indicator",
+    Color      = { 0, 200, 0 },
     Position   = { ledX, statusY + 32 },
     Size       = { 16, 16 }
   }
@@ -92,6 +93,7 @@ if CurrentPage == "Control" then
   layout["StatusText"] = {
     PrettyName = "Status~Text",
     Style      = "Text",
+    Color      = { 180, 0, 0 },
     Position   = { textX, statusY + 30 },
     Size       = { textW, 20 },
     FontSize   = 11

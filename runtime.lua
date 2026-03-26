@@ -49,6 +49,21 @@ local premuteVolume = nil
 -- do not send commands, preventing startup from overwriting Windows volume.
 local syncedFromPc = false
 
+-- bootingSince records the os.time() when BOOTING state was entered.
+-- DoPoll uses it to auto-recover to OFFLINE if booting takes too long (>120s),
+-- guarding against a WOL that never results in a successful poll.
+local bootingSince = nil
+
+-- shuttingDownSince records the os.time() when SHUTTING_DOWN state was entered.
+-- DoPoll uses it to auto-recover to OFFLINE if shutdown takes too long (>120s),
+-- guarding against the server dying before Windows fully shuts down.
+local shuttingDownSince = nil
+
+-- updatingFromPoll is true while DoPoll is writing volume/mute back into the
+-- Q-SYS controls. Blocks the EventHandlers from echoing the PC's own state
+-- back as a command, which would cause poll responses to override user input.
+local updatingFromPoll = false
+
 
 -- -------------------------------------------------------------
 -- State machine
@@ -60,7 +75,7 @@ local syncedFromPc = false
 -- SHUTTING_DOWN - shutdown accepted, waiting for the PC to drop off
 -- -------------------------------------------------------------
 
-local State = "OFFLINE"
+local State = ""  -- blank so startup SetState("OFFLINE") always fires and initialises controls
 
 local function SetState(newState)
   -- Skip if already in this state to avoid redundant control updates.
@@ -73,19 +88,25 @@ local function SetState(newState)
   if newState == "ONLINE" then
     Controls.OnlineStatus.Boolean = true
     Controls.StatusText.String    = "Online"
+    Controls.StatusText.Color     = "#00B400"
 
   elseif newState == "BOOTING" then
     Controls.OnlineStatus.Boolean = false
     Controls.StatusText.String    = "Booting..."
+    Controls.StatusText.Color     = "#C88200"
+    bootingSince = os.time()
 
   elseif newState == "SHUTTING_DOWN" then
     Controls.OnlineStatus.Boolean = false
     Controls.StatusText.String    = "Shutting Down..."
+    Controls.StatusText.Color     = "#C88200"
+    shuttingDownSince = os.time()
 
   else
     -- OFFLINE -- also reset audio controls so they don't show stale values.
     Controls.OnlineStatus.Boolean = false
     Controls.StatusText.String    = "Offline"
+    Controls.StatusText.Color     = "#B40000"
     syncedFromPc = false           -- require re-sync before next commands fire
     Controls.Volume.Value         = 0
     Controls.Mute.Boolean         = false
@@ -206,17 +227,40 @@ local function SendWOL()
   local macBytes = string.char(table.unpack(bytes))
   local packet   = string.rep("\xFF", 6) .. string.rep(macBytes, 16)
 
-  -- Send via UDP broadcast. Port 9 is the standard WOL port.
+  -- Send via UDP broadcast on ports 7 and 9 (both are standard WOL ports).
+  -- Packets are sent three times each for reliability, with brief delays
+  -- between bursts. The socket is kept open and closed after a delay to
+  -- ensure the async UDP sends complete before teardown.
   local udp = UdpSocket.New()
   udp:Open("0.0.0.0", 0)
-  udp:Send("255.255.255.255", 9, packet)
-  udp:Close()
 
-  dbg("Tx", "WOL magic packet sent to " .. mac)
+  -- Burst 1: immediate
+  udp:Send("255.255.255.255", 9, packet)
+  udp:Send("255.255.255.255", 7, packet)
+
+  -- Burst 2: after 500ms
+  Timer.CallAfter(function()
+    udp:Send("255.255.255.255", 9, packet)
+    udp:Send("255.255.255.255", 7, packet)
+  end, 0.5)
+
+  -- Burst 3: after 1000ms, then close the socket
+  Timer.CallAfter(function()
+    udp:Send("255.255.255.255", 9, packet)
+    udp:Send("255.255.255.255", 7, packet)
+    Timer.CallAfter(function() udp:Close() end, 0.5)
+  end, 1.0)
+
+  dbg("Tx", "WOL magic packet sent to " .. mac .. " (3 bursts, ports 7+9)")
 
   -- Optimistically move to BOOTING state. Poll failures will be tolerated
   -- until the PC comes up and responds with HTTP 200.
-  SetState("BOOTING")
+  -- If already ONLINE, skip the state change -- the PC is already on and
+  -- transitioning to BOOTING would block volume/mute commands until the
+  -- next successful poll.
+  if State ~= "ONLINE" then
+    SetState("BOOTING")
+  end
 end
 
 
@@ -290,6 +334,11 @@ local function DoPoll()
 
       local status = ParseStatus(data)
 
+      -- Sync volume and mute from the poll response.
+      -- updatingFromPoll prevents the EventHandlers from echoing these values
+      -- back to the PC as commands (which would override user input).
+      updatingFromPoll = true
+
       -- Sync volume from server to Q-SYS fader (clamped to min/max, whole numbers).
       if status.VOLUME then
         local v = tonumber(status.VOLUME)
@@ -308,6 +357,8 @@ local function DoPoll()
       if status.MUTE then
         Controls.Mute.Boolean = (status.MUTE == "1")
       end
+
+      updatingFromPoll = false
 
       -- If the server sent a MAC address, cache it for future WOL use and
       -- write it back to the MAC Address property so it survives Core restarts.
@@ -352,6 +403,28 @@ local function DoPoll()
 
       print("[WinPC] Poll failed: " .. tostring(err or code))
     end
+
+    -- Safety net: if BOOTING has persisted for more than 120 seconds,
+    -- the WOL likely failed. Force back to OFFLINE so the plugin doesn't
+    -- stay stuck in an unrecoverable state.
+    if State == "BOOTING" and bootingSince then
+      local elapsed = os.time() - bootingSince
+      if elapsed > 120 then
+        print("[WinPC] Boot timeout (" .. elapsed .. "s) -- forcing OFFLINE")
+        SetState("OFFLINE")
+      end
+    end
+
+    -- Safety net: if SHUTTING_DOWN has persisted for more than 120 seconds,
+    -- the shutdown likely failed or hung. Force back to OFFLINE so the
+    -- plugin doesn't stay stuck in an unrecoverable state.
+    if State == "SHUTTING_DOWN" and shuttingDownSince then
+      local elapsed = os.time() - shuttingDownSince
+      if elapsed > 120 then
+        print("[WinPC] Shutdown timeout (" .. elapsed .. "s) -- forcing OFFLINE")
+        SetState("OFFLINE")
+      end
+    end
   end)
 end
 
@@ -392,6 +465,7 @@ end
 -- Volume: Syncs the fader value to Windows master volume (0-100 integer, clamped to Min/Max).
 -- The clamp runs unconditionally so the fader snaps back even during emulation.
 Controls.Volume.EventHandler = function()
+  if updatingFromPoll then return end  -- poll is syncing; don't echo back to PC
   local clamped = ClampVolume(Controls.Volume.Value)
   if Controls.Volume.Value ~= clamped then
     Controls.Volume.Value = clamped  -- snap fader back; this re-fires the handler but clamped==value so no loop
@@ -404,7 +478,8 @@ end
 -- Mute: Syncs the toggle button to Windows master mute.
 -- When muting, saves the current volume so it can be restored on unmute.
 Controls.Mute.EventHandler = function()
-  if not syncedFromPc then return end  -- don't overwrite PC mute before first poll
+  if updatingFromPoll then return end   -- poll is syncing; don't echo back to PC
+  if not syncedFromPc then return end   -- don't overwrite PC mute before first poll
   if not RequireOnline("Mute") then return end
   local muting = Controls.Mute.Boolean
   if muting then

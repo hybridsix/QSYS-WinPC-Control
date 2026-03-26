@@ -81,7 +81,7 @@ table.insert(props, {
   Type  = "integer",
   Min   = 5,
   Max   = 300,
-  Value = 30
+  Value = 15
 })
 
 
