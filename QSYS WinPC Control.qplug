@@ -80,11 +80,19 @@ end
 
 
 -- -------------------------------------------------------------
+-- PageNames
+-- Fixed page list: Control and Setup only.
+-- Referenced by layout.lua at design time, so must be declared
+-- at module scope (not only inside GetPages).
+-- -------------------------------------------------------------
+PageNames = { "Control", "Setup" }
+
+
+-- -------------------------------------------------------------
 -- GetPages(props)
 -- Populates the pages table from PageNames via pages.lua.
 -- -------------------------------------------------------------
 function GetPages(props)
-  PageNames = { "Control", "Setup" }
   local pages = {}
   -- =============================================================
   -- pages.lua -- Win PC Control
