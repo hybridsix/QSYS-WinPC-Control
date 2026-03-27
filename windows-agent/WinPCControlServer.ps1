@@ -46,6 +46,50 @@ if ($Token -eq "") {
 }
 
 
+# ============================================
+# CONSOLE WINDOW SETUP
+# ============================================
+
+$Host.UI.RawUI.WindowTitle = "WinPC Control Server - DO NOT CLOSE"
+
+$script:lastQsysContact = $null
+
+function Show-Banner {
+    Write-Host ""
+    Write-Host "  ============================================" -ForegroundColor Cyan
+    Write-Host "    WinPC Control Server" -ForegroundColor White
+    Write-Host "    DO NOT CLOSE THIS WINDOW" -ForegroundColor Yellow
+    Write-Host "  ============================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Port:     $Port" -ForegroundColor Gray
+    Write-Host "  Host:     $env:COMPUTERNAME" -ForegroundColor Gray
+    Write-Host "  User:     $env:USERNAME" -ForegroundColor Gray
+    Write-Host "  Log:      $LOG_FILE" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  This server allows a Q-SYS Core to control" -ForegroundColor DarkGray
+    Write-Host "  volume, mute, and power on this PC." -ForegroundColor DarkGray
+    Write-Host "  Closing this window will stop the server." -ForegroundColor DarkGray
+    Write-Host ""
+}
+
+function Update-ConsoleStatus {
+    $ts = Get-Date -Format "HH:mm:ss"
+    if ($script:lastQsysContact) {
+        $elapsed = (Get-Date) - $script:lastQsysContact
+        if ($elapsed.TotalSeconds -lt 60) {
+            $ago = "{0}s ago" -f [int]$elapsed.TotalSeconds
+        } else {
+            $ago = "{0}m ago" -f [int]$elapsed.TotalMinutes
+        }
+        $Host.UI.RawUI.WindowTitle = "WinPC Control - Connected (last poll $ago)"
+        Write-Host "  [$ts]  Q-SYS connected  (last poll $ago)" -ForegroundColor Green
+    } else {
+        $Host.UI.RawUI.WindowTitle = "WinPC Control - Waiting for Q-SYS..."
+        Write-Host "  [$ts]  Waiting for Q-SYS connection..." -ForegroundColor Yellow
+    }
+}
+
+
 # -----------------------------------------------
 # LOGGING
 # Max log size capped at $LOG_MAX_LINES lines.
@@ -361,6 +405,8 @@ try {
     $listener.Start()
     Write-Log "=== WinPCControlServer started on port $Port ==="
     Trim-Log   # Trim any leftover growth from previous run
+    Show-Banner
+    Update-ConsoleStatus
 }
 catch {
     Write-Log "FATAL: Could not start HTTP listener on port $Port. Was install.ps1 run as admin? Error: $_"
@@ -392,6 +438,8 @@ while ($listener.IsListening) {
         if ($path -eq "/status" -and $method -eq "GET") {
             $body = Get-StatusBody
             Send-Response -Response $response -Body $body
+            $script:lastQsysContact = Get-Date
+            Update-ConsoleStatus
         }
         elseif ($path -eq "/command" -and ($method -eq "POST" -or $method -eq "GET")) {
             $reader  = [System.IO.StreamReader]::new($request.InputStream, [System.Text.Encoding]::UTF8)
