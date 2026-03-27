@@ -1,7 +1,7 @@
 # Win PC Control - Q-SYS Plugin
 
 **Author:** Michael King / Hybridsix
-**Version:** 0.1
+**Version:** 0.2.0-alpha
 **Platform:** Q-SYS Designer 9.x+, Windows 10/11 target PC
 
 A Q-SYS plugin that gives your Core direct control over a Windows PC on the local network - power, volume, mute, and live status, all from the schematic.
@@ -11,8 +11,8 @@ A Q-SYS plugin that gives your Core direct control over a Windows PC on the loca
 ## Features
 
 - **Wake-on-LAN** - power the PC on remotely via UDP magic packet (3 bursts on ports 7 and 9 for reliability)
-- **Volume control** - read and set Windows master volume (integer 0-100), with configurable min/max limits and an out-of-range warning indicator
-- **Mute** - toggle Windows master mute; restores pre-mute volume level on unmute
+- **Volume control** - read and set Windows master volume (integer 0-100) via fader or digit entry, with configurable min/max limits and an out-of-range warning indicator. Rate-limited to 10 commands/sec to prevent HTTP pool saturation. Server auto-detects whether the audio driver supports scalar volume; falls back to step-based control (~2% granularity) if not.
+- **Mute** - toggle Windows master mute
 - **Graceful shutdown** - sends a clean shutdown command to Windows
 - **Live status polling** - configurable poll interval keeps online state, volume, mute, and discovered hostname in sync
 - **Auto MAC discovery** - the PC reports its own MAC address on every poll; the plugin writes it back to the MAC Address property so Wake-on-LAN works after a Core restart without manual configuration
@@ -108,7 +108,7 @@ All pins are available in the **Control Pins** section of the Properties panel a
 | Status Online | Output | LED | `true` when the server is reachable |
 | Status Text | Output | Text | Current state: Offline / Booting... / Online / Shutting Down... |
 | Last Poll | Output | Text | Timestamp of the last successful poll |
-| Volume | Both | Fader (0-100) | Windows master volume |
+| Volume | Both | Fader (0-100) | Windows master volume (also has a digit entry box on the panel) |
 | Mute | Both | Toggle button | Windows master mute |
 
 ---
@@ -149,6 +149,7 @@ This is useful when the PC is connected to a fixed-level system and you want to 
 | `windows-agent/install.ps1` | Run on Windows PC (as Administrator) | One-time setup |
 | `windows-agent/WinPCControlServer.ps1` | Copied to `C:\QSYS WinPC Control\` by installer | The HTTP server - do not run manually |
 | `windows-agent/uninstall.ps1` | Run on Windows PC (as Administrator) | Clean removal |
+| `windows-agent/test-audio.ps1` | Run from repo folder when troubleshooting | Diagnostic: tests 5 Core Audio API methods to identify driver support |
 | `QSYS WinPC Control.qplug` | Q-SYS Designer plugins folder | The compiled plugin |
 | `C:\QSYS WinPC Control\config.txt` | Windows PC | PORT= and TOKEN= - do not edit manually |
 | `C:\QSYS WinPC Control\server.log` | Windows PC | Rolling server log (capped at 500 lines) |

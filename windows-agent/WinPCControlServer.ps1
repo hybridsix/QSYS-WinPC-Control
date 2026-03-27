@@ -129,20 +129,60 @@ public static class AudioHelper {
         return (IAudioEndpointVolume)volumeObj;
     }
 
-    public static void SetVolume(int percent) {
+    private static bool scalarWorks = true;
+
+    public static string SetVolume(int percent) {
         var vol = GetVolumeInterface();
         Guid empty = Guid.Empty;
-        float scalar;
-        vol.GetMasterVolumeLevelScalar(out scalar);
-        int current = (int)Math.Round(scalar * 100);
-        int delta = percent - current;
-        int steps = Math.Abs(delta);
-        // Safety cap to prevent runaway loops
+
+        float beforeScalar;
+        vol.GetMasterVolumeLevelScalar(out beforeScalar);
+        int beforePct = (int)Math.Round(beforeScalar * 100);
+
+        if (beforePct == percent) return string.Format("already {0}%", percent);
+
+        // Try scalar API if not known-broken on this hardware.
+        if (scalarWorks) {
+            float scalar = Math.Max(0f, Math.Min(1f, percent / 100f));
+            vol.SetMasterVolumeLevelScalar(scalar, ref empty);
+
+            float afterScalar;
+            vol.GetMasterVolumeLevelScalar(out afterScalar);
+            int afterPct = (int)Math.Round(afterScalar * 100);
+
+            if (afterPct == percent) {
+                return string.Format("scalar {0}%->{1}%", beforePct, afterPct);
+            }
+            // Scalar returned S_OK but didn't change volume — driver ignores it.
+            if (afterPct == beforePct) {
+                scalarWorks = false;
+            }
+        }
+
+        // Step-based control (works on all hardware, ~2% resolution).
+        uint currentStep, stepCount;
+        vol.GetVolumeStepInfo(out currentStep, out stepCount);
+
+        float nowScalar;
+        vol.GetMasterVolumeLevelScalar(out nowScalar);
+        int currentPct = (int)Math.Round(nowScalar * 100);
+        int delta = percent - currentPct;
+
+        float pctPerStep = stepCount > 0 ? 100f / stepCount : 2f;
+        int steps = (int)Math.Round(Math.Abs(delta) / pctPerStep);
+        if (steps < 1) steps = 1;
         if (steps > 100) steps = 100;
+
         for (int i = 0; i < steps; i++) {
             if (delta > 0) vol.VolumeStepUp(ref empty);
             else           vol.VolumeStepDown(ref empty);
         }
+
+        float finalScalar;
+        vol.GetMasterVolumeLevelScalar(out finalScalar);
+        int finalPct = (int)Math.Round(finalScalar * 100);
+        return string.Format("step {0}%->{1}%  ({2} steps)",
+            beforePct, finalPct, steps);
     }
 
     public static int GetVolume() {
@@ -187,9 +227,9 @@ function Get-MasterMute {
 
 function Set-MasterVolume ([int]$Percent) {
     try {
-        [AudioHelper]::SetVolume($Percent)
+        $diag = [AudioHelper]::SetVolume($Percent)
         $readBack = [AudioHelper]::GetVolume()
-        Write-Log "Volume set to $Percent% (readBack=$readBack%)"
+        Write-Log "Volume set to $Percent% (readBack=$readBack%) [$diag]"
     }
     catch { Write-Log "ERROR setting volume: $_"; throw }
 }

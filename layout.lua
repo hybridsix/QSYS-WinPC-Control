@@ -147,9 +147,10 @@ if CurrentPage == "Control" then
     Size         = { W, 110 }
   })
 
-  -- Volume row: label | fader (stretches) | Mute button
-  -- Mute: 100px wide, 10px from right edge of box (5+490-10-100 = 385)
-  -- Fader: from x=75 to x=375 (300px wide)
+  -- Volume row: label | fader | digit box | Mute button
+  -- Fader: from x=75, 240px wide
+  -- Digit box: x=320, 55px wide (type exact volume)
+  -- Mute: 100px wide at x=385
   table.insert(graphics, {
     Type       = "Text",
     Text       = "Volume:",
@@ -164,7 +165,15 @@ if CurrentPage == "Control" then
     PrettyName = "Audio~Volume",
     Style      = "Fader",
     Position   = { 75, audioY + 30 },
-    Size       = { 300, 20 }
+    Size       = { 240, 20 }
+  }
+
+  layout["VolumeEntry"] = {
+    PrettyName = "Audio~Volume Entry",
+    Style      = "TextBox",
+    Position   = { 320, audioY + 28 },
+    Size       = { 55, 24 },
+    FontSize   = 12
   }
 
   layout["Mute"] = {
@@ -261,48 +270,89 @@ elseif CurrentPage == "Setup" then
     })
   end
 
-  local function cfg_value(text, y)
-    table.insert(graphics, {
-      Type       = "Text",
-      Text       = text,
-      Position   = { 127, y },
-      Size       = { 360, 16 },
-      FontSize   = 11,
-      HTextAlign = "Left",
-      Color      = { 30, 30, 30 }
-    })
+  -- Auto-populated / read-only fields — grey styling, no border.
+  local function cfg_auto(name, y)
+    return {
+      PrettyName  = "Setup~" .. name,
+      Style       = "Text",
+      Position    = { 127, y },
+      Size        = { 250, 16 },
+      FontSize    = 11,
+      HTextAlign  = "Left",
+      Color       = { 160, 160, 160 },
+      StrokeWidth = 0,
+      Fill        = { 40, 40, 40 }
+    }
+  end
+
+  -- Editable fields — black fill, white text, cyan border.
+  local function cfg_edit(name, y)
+    return {
+      PrettyName  = "Setup~" .. name,
+      Style       = "Text",
+      Position    = { 127, y },
+      Size        = { 250, 16 },
+      FontSize    = 11,
+      HTextAlign  = "Left",
+      Color       = { 255, 255, 255 },
+      StrokeColor = { 0, 210, 255 },
+      StrokeWidth = 1,
+      Fill        = { 0, 0, 0 }
+    }
   end
 
   cfg_label("Computer Name:",  35)
-  cfg_value(props["Computer Name"].Value ~= "" and props["Computer Name"].Value or "(not set)", 35)
+  layout["CfgComputerName"] = cfg_auto("Computer Name", 35)
 
   cfg_label("Hostname / IP:",  55)
-  cfg_value(props["Hostname or IP"].Value ~= "" and props["Hostname or IP"].Value or "(not set)", 55)
+  layout["CfgHostname"] = cfg_auto("Hostname", 55)
 
   cfg_label("MAC Address:",    75)
-  cfg_value(props["MAC Address"].Value ~= "" and props["MAC Address"].Value or "(auto-discover)", 75)
+  layout["MacDisplay"] = cfg_auto("MAC Display", 75)
 
   cfg_label("HTTP Port:",      95)
-  cfg_value(tostring(props["HTTP Port"].Value), 95)
+  layout["CfgHttpPort"] = cfg_edit("HTTP Port", 95)
 
   cfg_label("Poll Interval:", 115)
-  cfg_value(tostring(props["Poll Interval (s)"].Value) .. " s", 115)
+  layout["CfgPollInterval"] = cfg_edit("Poll Interval", 115)
 
-  cfg_label("Vol Ramp Time:", 135)
-  cfg_value(tostring(props["Volume Ramp Time (s)"].Value) .. " s", 135)
+  cfg_label("Auth Token:",    135)
+  layout["CfgAuthToken"] = cfg_auto("Auth Token", 135)
 
-  cfg_label("Auth Token:",    155)
-  local tokenSet = props["Auth Token"].Value ~= ""
-  cfg_value(tokenSet and "(configured)" or "NOT SET — run install.ps1 on PC first", 135)
+  -- Update button
+  layout["CfgUpdate"] = {
+    PrettyName  = "Setup~Update",
+    Style       = "Button",
+    ButtonStyle = "Normal",
+    Legend      = "Update",
+    Position    = { 380, 155 },
+    Size        = { 107, 25 },
+    FontSize    = 12,
+    Color       = { 255, 255, 255 },
+    UnvisibleColor = { 0, 0, 0 },
+    StrokeColor = { 0, 210, 255 },
+    StrokeWidth = 2,
+    CornerRadius = 4
+  }
+
+  table.insert(graphics, {
+    Type       = "Text",
+    Text       = "Grey fields are auto-populated.  Cyan-bordered fields can be changed at runtime.",
+    Position   = { 12, 160 },
+    Size       = { 365, 14 },
+    FontSize   = 9,
+    HTextAlign = "Left",
+    Color      = { 105, 104, 104 }
+  })
 
   table.insert(graphics, {
     Type       = "Text",
     Text       = "Token is stored in C:\\QSYS WinPC Control\\config.txt on the Windows PC.",
-    Position   = { 12, 180 },
+    Position   = { 12, 175 },
     Size       = { 475, 14 },
     FontSize   = 9,
     HTextAlign = "Left",
-    Color      = { 105, 104, 104 } -- Grey Seal
+    Color      = { 105, 104, 104 }
   })
 
 end

@@ -105,7 +105,11 @@ local function SetState(newState)
     Controls.StatusText.Color     = "#B40000"
     syncedFromPc = false           -- require re-sync before next commands fire
     Controls.Volume.Value         = 0
+    Controls.VolumeEntry.Value    = 0
     Controls.Mute.Boolean         = false
+    Controls.Volume.IsDisabled    = true
+    Controls.VolumeEntry.IsDisabled = true
+    Controls.Mute.IsDisabled      = true
   end
 end
 
@@ -289,6 +293,42 @@ local function SendVolume(pct)
   http_post("VOLUME:" .. tostring(ClampVolume(pct)))
 end
 
+-- Rate limiter: caps volume sends to 5/sec (200ms interval).
+-- Buffered value ensures the final fader position is always sent.
+local VOL_RATE_INTERVAL = 0.1  -- seconds
+local volLastSendTime = 0
+local volPending = nil
+local volRateTimer = Timer.New()
+
+volRateTimer.EventHandler = function()
+  volRateTimer:Stop()
+  if volPending then
+    local pct = volPending
+    volPending = nil
+    volLastSendTime = os.clock()
+    SendVolume(pct)
+  end
+end
+
+local function RateLimitedSendVolume(pct)
+  local now = os.clock()
+  if now - volLastSendTime >= VOL_RATE_INTERVAL then
+    volLastSendTime = now
+    volPending = nil
+    SendVolume(pct)
+  else
+    volPending = pct
+    volRateTimer:Stop()
+    volRateTimer:Start(VOL_RATE_INTERVAL)
+  end
+end
+
+-- Tracks when the user last touched the volume fader. Poll writeback
+-- is suppressed for 2 seconds after the last touch so the fader doesn't
+-- snap to stale values mid-drag.
+local volLastUserTouch = -10
+local VOL_TOUCH_COOLDOWN = 2  -- seconds
+
 -- Send mute state as "1" (muted) or "0" (not muted).
 local function SendMute(muted)
   http_post("MUTE:" .. (muted and "1" or "0"))
@@ -319,11 +359,15 @@ end
 --   Called by pollTimer every N seconds.
 --   On success: updates state to ONLINE and syncs volume/mute/MAC.
 --   On failure: handles BOOTING tolerance and OFFLINE transition.
+--   The entire HTTP callback is wrapped in pcall so a Lua error inside
+--   the callback cannot crash the plugin runtime and permanently kill
+--   the poll timer.
 local function DoPoll()
   -- Don't bother polling if the hostname was never configured.
   if host == "" then return end
 
   http_get_status(function(code, data, err)
+    local ok, luaErr = pcall(function()
     if code == 200 and data then
       -- PC is responding. Move to ONLINE if we weren't already.
       if State ~= "ONLINE" then SetState("ONLINE") end
@@ -336,6 +380,8 @@ local function DoPoll()
       updatingFromPoll = true
 
       -- Sync volume from server to Q-SYS fader (clamped to min/max, whole numbers).
+      -- Skip fader writeback if the user is actively adjusting (within the last 2s)
+      -- to prevent the fader from snapping to stale values mid-drag.
       if status.VOLUME then
         local v = tonumber(status.VOLUME)
         if v then
@@ -343,9 +389,12 @@ local function DoPoll()
           local hi = math.floor(Controls.VolumeMax.Value + 0.5)
           -- Show warning LED if PC volume is outside our configured limits.
           Controls.VolumeWarning.Boolean = (v < lo or v > hi)
-          -- Leave the fader at the clamped value so it doesn't mislead,
-          -- but don't push a new volume command back to the PC.
-          Controls.Volume.Value = ClampVolume(v)
+          -- Only write to the fader if the user isn't actively dragging.
+          local timeSinceTouch = os.clock() - volLastUserTouch
+          if timeSinceTouch >= VOL_TOUCH_COOLDOWN then
+            Controls.Volume.Value = ClampVolume(v)
+            Controls.VolumeEntry.Value = ClampVolume(v)
+          end
         end
       end
 
@@ -363,6 +412,7 @@ local function DoPoll()
         if cachedMac ~= status.MAC then
           cachedMac = status.MAC
           Properties["MAC Address"].Value = cachedMac
+          Controls.MacDisplay.String = cachedMac
           dbg("Rx", "MAC auto-discovered: " .. cachedMac .. " (saved to property)")
         end
       end
@@ -378,6 +428,11 @@ local function DoPoll()
 
       -- Allow Volume/Mute handlers to send commands now that we have
       -- synced the fader from the PC's actual state.
+      if not syncedFromPc then
+        Controls.Volume.IsDisabled    = false
+        Controls.VolumeEntry.IsDisabled = false
+        Controls.Mute.IsDisabled      = false
+      end
       syncedFromPc = true
 
     else
@@ -421,11 +476,26 @@ local function DoPoll()
         SetState("OFFLINE")
       end
     end
+    end) -- end pcall
+
+    if not ok then
+      print("[WinPC] ERROR in poll callback: " .. tostring(luaErr))
+    end
   end)
 end
 
--- Wire up the timer callback and we're ready to start it at the bottom.
-pollTimer.EventHandler = DoPoll
+-- The poll timer uses a self-rescheduling pattern instead of a simple
+-- repeating timer. This guarantees the next poll is always scheduled
+-- even if the current poll callback throws an error. A repeating timer
+-- can die permanently if the callback crashes.
+pollTimer.EventHandler = function()
+  pollTimer:Stop()
+  local ok, luaErr = pcall(DoPoll)
+  if not ok then
+    print("[WinPC] ERROR in DoPoll: " .. tostring(luaErr))
+  end
+  pollTimer:Start(pollInterval)
+end
 
 
 -- -------------------------------------------------------------
@@ -462,13 +532,28 @@ end
 -- The clamp runs unconditionally so the fader snaps back even during emulation.
 Controls.Volume.EventHandler = function()
   if updatingFromPoll then return end  -- poll is syncing; don't echo back to PC
+  volLastUserTouch = os.clock()        -- mark fader as actively being touched
   local clamped = ClampVolume(Controls.Volume.Value)
   if Controls.Volume.Value ~= clamped then
     Controls.Volume.Value = clamped  -- snap fader back; this re-fires the handler but clamped==value so no loop
   end
+  Controls.VolumeEntry.Value = clamped  -- keep digit box in sync
   if not syncedFromPc then return end  -- don't overwrite PC volume before first poll
   if not RequireOnline("Volume") then return end
-  SendVolume(clamped)
+  RateLimitedSendVolume(clamped)
+end
+
+-- VolumeEntry: Lets the user type an exact volume value.
+-- Syncs the fader and sends the command (same guards as the fader handler).
+Controls.VolumeEntry.EventHandler = function()
+  if updatingFromPoll then return end
+  volLastUserTouch = os.clock()
+  local clamped = ClampVolume(Controls.VolumeEntry.Value)
+  Controls.VolumeEntry.Value = clamped  -- snap to clamped
+  Controls.Volume.Value = clamped       -- sync fader (won't loop: updatingFromPoll guard)
+  if not syncedFromPc then return end
+  if not RequireOnline("Volume") then return end
+  RateLimitedSendVolume(clamped)
 end
 
 -- Mute: Syncs the toggle button to Windows master mute.
@@ -484,10 +569,53 @@ end
 -- Startup
 -- -------------------------------------------------------------
 
+-- -------------------------------------------------------------
+-- Setup page controls — initialize from Properties, apply on Update.
+-- -------------------------------------------------------------
+
+local function InitSetupControls()
+  Controls.CfgComputerName.String = Properties["Computer Name"].Value
+  Controls.CfgHostname.String     = Properties["Hostname or IP"].Value
+  Controls.MacDisplay.String      = cachedMac ~= "" and cachedMac or "(auto-discover)"
+  Controls.CfgHttpPort.Value      = Properties["HTTP Port"].Value
+  Controls.CfgPollInterval.Value  = Properties["Poll Interval (s)"].Value
+  Controls.CfgAuthToken.String    = Properties["Auth Token"].Value
+end
+
+local function ApplyConfig()
+  -- Write control values back to Properties so they persist in the design.
+  Properties["Computer Name"].Value    = Controls.CfgComputerName.String
+  Properties["Hostname or IP"].Value   = Controls.CfgHostname.String
+  Properties["HTTP Port"].Value        = math.floor(Controls.CfgHttpPort.Value + 0.5)
+  Properties["Poll Interval (s)"].Value = math.floor(Controls.CfgPollInterval.Value + 0.5)
+  Properties["Auth Token"].Value       = Controls.CfgAuthToken.String
+
+  -- Re-derive runtime variables from the new values.
+  host         = Properties["Hostname or IP"].Value
+  httpPort     = Properties["HTTP Port"].Value
+  pollInterval = Properties["Poll Interval (s)"].Value
+  authToken    = Properties["Auth Token"].Value
+  baseUrl      = string.format("http://%s:%d", host, httpPort)
+  authHeader   = { Authorization = "Bearer " .. authToken }
+
+  -- Restart the poll timer with the new interval.
+  pollTimer:Stop()
+  syncedFromPc = false
+  SetState("OFFLINE")
+  pollTimer:Start(pollInterval)
+  print("[WinPC] Config updated. Polling " .. (host ~= "" and host or "(no hostname set)") .. " every " .. pollInterval .. "s.")
+end
+
+Controls.CfgUpdate.EventHandler = function()
+  ApplyConfig()
+end
+
+-- Startup
 SetState("OFFLINE")
 Controls.VolumeMin.Value       = 0
 Controls.VolumeMax.Value       = 100
 Controls.VolumeWarning.Boolean = false
+InitSetupControls()
 pollTimer:Start(pollInterval)
 print("[WinPC] Plugin started. Polling " .. (host ~= "" and host or "(no hostname set)") .. " every " .. pollInterval .. "s.")
 

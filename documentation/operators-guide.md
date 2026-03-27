@@ -1,7 +1,7 @@
 # Win PC Control - Operator's Guide
 
 **Plugin:** Hybridsix Plugins -> Win PC Control
-**Version:** 0.1
+**Version:** 0.2.0-alpha
 
 This guide is for AV technicians and system operators who are using an installed and configured Win PC Control plugin in a Q-SYS design. For installation and setup, refer to the [README](../README.md).
 
@@ -61,8 +61,8 @@ Double-click the plugin block in the schematic to open the panel. It has two tab
 
 | Control | What it does |
 |---|---|
-| **Volume fader** | Sets Windows master volume (0-100). Changes are sent immediately to the PC. The fader also moves automatically when the PC volume changes from another source (synced on each poll). |
-| **Mute button** | Toggles Windows master mute (red = muted). When you unmute, the volume is restored to what it was before muting. |
+| **Volume fader** | Sets Windows master volume (0-100). Changes are rate-limited (max 10 per second) to prevent overload. The fader also moves automatically when the PC volume changes from another source (synced on each poll). A digit entry box next to the fader lets you type an exact volume value. |
+| **Mute button** | Toggles Windows master mute (red = muted). |
 | **Vol Min / Vol Max** | Clamps the volume range. Commands outside this range are automatically clamped. The fader is also clamped. |
 | **Out of Range LED** | Lights amber if the PC is reporting a volume level outside the Min/Max limits you've set. |
 
@@ -85,18 +85,27 @@ Note: Volume and mute commands are silently ignored when the PC is not **Online*
 
 ## Setup tab
 
-The Setup tab shows a read-only summary of the current configuration. If something looks wrong here, the values need to be corrected in the plugin's **Properties** panel (right-click the block -> Properties, or click the block and view the Properties pane).
+The Setup tab shows the current configuration. Fields are visually split into two groups:
+
+**Grey fields (auto-populated)** — these are populated from Properties on startup and updated automatically (e.g., MAC Address is discovered on each poll). They cannot be changed at runtime from this page; edit them in the Properties panel instead.
 
 | Field | What it shows |
 |---|---|
 | Computer Name | The friendly label set in Properties |
 | Hostname / IP | The address the plugin connects to |
-| MAC Address | Used for Wake-on-LAN - auto-discovered after first poll and saved to the property automatically |
+| MAC Address | Used for Wake-on-LAN — auto-discovered after first poll and saved to the property automatically |
+| Auth Token | The bearer token for HTTP authentication |
+
+**Cyan-bordered fields (editable at runtime)** — you can change these while the plugin is running and press the **Update** button to apply.
+
+| Field | What it does |
+|---|---|
 | HTTP Port | The port the server is listening on (default 2207) |
 | Poll Interval (s) | How often the plugin checks in with the PC (default 15s) |
-| Auth Token | Shows **(configured)** or **NOT SET** |
 
-If Auth Token shows **NOT SET**, the plugin cannot communicate with the PC. Re-run `install.ps1` from the `windows-agent/` folder on the PC and paste the generated token into the Auth Token property.
+The **Update** button writes your changes back to the plugin Properties, re-derives the connection URL, and restarts the poll timer. Changes to other fields (Computer Name, Hostname, Auth Token) must be made in the Properties panel and require a plugin restart.
+
+If Auth Token is blank, the plugin cannot communicate with the PC. Re-run `install.ps1` from the `windows-agent/` folder on the PC and paste the generated token into the Auth Token property.
 
 ---
 

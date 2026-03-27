@@ -53,7 +53,7 @@ catch {
 }
 
 
-# ---- Step 2: Copy server script ----
+# ---- Step 2: Copy server script and uninstall script ----
 Write-Step "Copying server script"
 $source = Join-Path $PSScriptRoot $SERVER_SCRIPT
 if (-not (Test-Path $source)) {
@@ -65,6 +65,19 @@ try {
 }
 catch {
     Write-Fail "Could not copy script: $_"
+}
+
+$uninstallSource = Join-Path $PSScriptRoot "uninstall.ps1"
+if (Test-Path $uninstallSource) {
+    try {
+        Copy-Item -Path $uninstallSource -Destination "$WORK_DIR\uninstall.ps1" -Force
+        Write-OK "Copied uninstall.ps1 to $WORK_DIR"
+    }
+    catch {
+        Write-Host "     [WARN] Could not copy uninstall.ps1: $_" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "     [WARN] uninstall.ps1 not found next to install.ps1 -- skipping" -ForegroundColor Yellow
 }
 
 
