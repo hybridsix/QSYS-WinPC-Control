@@ -53,8 +53,12 @@ if ($Token -eq "") {
 $Host.UI.RawUI.WindowTitle = "WinPC Control Server - DO NOT CLOSE"
 
 $script:lastQsysContact = $null
+$script:statusLines = [System.Collections.Generic.List[string]]::new()
+$STATUS_MAX_LINES = 8
+$script:statusStartRow = 0   # Set after banner is drawn
 
 function Show-Banner {
+    Clear-Host
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Cyan
     Write-Host "    WinPC Control Server" -ForegroundColor White
@@ -70,10 +74,29 @@ function Show-Banner {
     Write-Host "  volume, mute, and power on this PC." -ForegroundColor DarkGray
     Write-Host "  Closing this window will stop the server." -ForegroundColor DarkGray
     Write-Host ""
+    # Record cursor row — all status lines will be drawn from here down
+    $script:statusStartRow = $Host.UI.RawUI.CursorPosition.Y
 }
 
 function Update-ConsoleStatus {
+    param([string]$Event = "poll")
+
     $ts = Get-Date -Format "HH:mm:ss"
+
+    if ($Event -eq "poll") {
+        $script:lastQsysContact = Get-Date
+        $script:statusLines.Add("  [$ts]  Q-SYS poll received")
+    }
+    elseif ($Event -eq "command") {
+        $script:statusLines.Add("  [$ts]  Q-SYS command received")
+    }
+
+    # Keep only the last N lines
+    while ($script:statusLines.Count -gt $STATUS_MAX_LINES) {
+        $script:statusLines.RemoveAt(0)
+    }
+
+    # Update title bar with elapsed time (useful from taskbar)
     if ($script:lastQsysContact) {
         $elapsed = (Get-Date) - $script:lastQsysContact
         if ($elapsed.TotalSeconds -lt 60) {
@@ -82,11 +105,23 @@ function Update-ConsoleStatus {
             $ago = "{0}m ago" -f [int]$elapsed.TotalMinutes
         }
         $Host.UI.RawUI.WindowTitle = "WinPC Control - Connected (last poll $ago)"
-        Write-Host "  [$ts]  Q-SYS connected  (last poll $ago)" -ForegroundColor Green
     } else {
         $Host.UI.RawUI.WindowTitle = "WinPC Control - Waiting for Q-SYS..."
-        Write-Host "  [$ts]  Waiting for Q-SYS connection..." -ForegroundColor Yellow
     }
+
+    # Overwrite status area in place — no Clear-Host, no flicker
+    $width = $Host.UI.RawUI.BufferSize.Width
+    $blank = " " * $width
+    for ($i = 0; $i -lt $STATUS_MAX_LINES; $i++) {
+        [Console]::SetCursorPosition(0, $script:statusStartRow + $i)
+        if ($i -lt $script:statusLines.Count) {
+            $line = $script:statusLines[$i]
+            Write-Host $line.PadRight($width) -ForegroundColor Green -NoNewline
+        } else {
+            [Console]::Write($blank)
+        }
+    }
+    [Console]::SetCursorPosition(0, $script:statusStartRow + $STATUS_MAX_LINES)
 }
 
 
@@ -406,7 +441,7 @@ try {
     Write-Log "=== WinPCControlServer started on port $Port ==="
     Trim-Log   # Trim any leftover growth from previous run
     Show-Banner
-    Update-ConsoleStatus
+    Write-Host "  Waiting for Q-SYS connection..." -ForegroundColor Yellow
 }
 catch {
     Write-Log "FATAL: Could not start HTTP listener on port $Port. Was install.ps1 run as admin? Error: $_"
@@ -438,8 +473,7 @@ while ($listener.IsListening) {
         if ($path -eq "/status" -and $method -eq "GET") {
             $body = Get-StatusBody
             Send-Response -Response $response -Body $body
-            $script:lastQsysContact = Get-Date
-            Update-ConsoleStatus
+            Update-ConsoleStatus -Event "poll"
         }
         elseif ($path -eq "/command" -and ($method -eq "POST" -or $method -eq "GET")) {
             $reader  = [System.IO.StreamReader]::new($request.InputStream, [System.Text.Encoding]::UTF8)
@@ -457,6 +491,7 @@ while ($listener.IsListening) {
                 # Send OK before SHUTDOWN so Q-SYS gets the response
                 Send-Response -Response $response -Body "OK"
                 Invoke-QSYSCommand -RawMessage $cmdBody
+                Update-ConsoleStatus -Event "command"
             } else {
                 Send-Response -Response $response -StatusCode 400 -Body "Empty command"
             }
