@@ -61,7 +61,7 @@ Double-click the plugin block in the schematic to open the panel. It has two tab
 
 | Control | What it does |
 |---|---|
-| **Volume fader** | Sets Windows master volume (0-100). The fader is debounced — commands are not sent while you are dragging. After you release the fader (300ms of no movement), the plugin ramps smoothly from the current PC volume to the new target over the configured **Volume Ramp Time** (default 1 second, configurable 0–10s in Properties; 0 = instant). The fader also moves automatically when the PC volume changes from another source. |
+| **Volume fader** | Sets Windows master volume (0-100). Changes are sent immediately to the PC. The fader also moves automatically when the PC volume changes from another source (synced on each poll). |
 | **Mute button** | Toggles Windows master mute (red = muted). When you unmute, the volume is restored to what it was before muting. |
 | **Vol Min / Vol Max** | Clamps the volume range. Commands outside this range are automatically clamped. The fader is also clamped. |
 | **Out of Range LED** | Lights amber if the PC is reporting a volume level outside the Min/Max limits you've set. |
@@ -94,7 +94,6 @@ The Setup tab shows a read-only summary of the current configuration. If somethi
 | MAC Address | Used for Wake-on-LAN - auto-discovered after first poll and saved to the property automatically |
 | HTTP Port | The port the server is listening on (default 2207) |
 | Poll Interval (s) | How often the plugin checks in with the PC (default 15s) |
-| Vol Ramp Time | Seconds to ramp from current to new volume after releasing the fader (default 1s, 0 = instant) |
 | Auth Token | Shows **(configured)** or **NOT SET** |
 
 If Auth Token shows **NOT SET**, the plugin cannot communicate with the PC. Re-run `install.ps1` from the `windows-agent/` folder on the PC and paste the generated token into the Auth Token property.

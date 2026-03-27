@@ -11,7 +11,7 @@ A Q-SYS plugin that gives your Core direct control over a Windows PC on the loca
 ## Features
 
 - **Wake-on-LAN** - power the PC on remotely via UDP magic packet (3 bursts on ports 7 and 9 for reliability)
-- **Volume control** - read and set Windows master volume (integer 0-100), with configurable min/max limits, an out-of-range warning indicator, debounced fader input, and configurable volume ramp time
+- **Volume control** - read and set Windows master volume (integer 0-100), with configurable min/max limits and an out-of-range warning indicator
 - **Mute** - toggle Windows master mute; restores pre-mute volume level on unmute
 - **Graceful shutdown** - sends a clean shutdown command to Windows
 - **Live status polling** - configurable poll interval keeps online state, volume, mute, and discovered hostname in sync
@@ -94,7 +94,6 @@ To remove everything cleanly, run `uninstall.ps1` as Administrator.
 | HTTP Port | Must match the port used during `install.ps1` (default `2207`) |
 | Auth Token | Paste the token printed by `install.ps1` |
 | Poll Interval (s) | How often to check status (default `15` seconds) |
-| Volume Ramp Time (s) | Seconds to ramp from old volume to new target after releasing the fader. `0` = instant. Default `1`. |
 
 ---
 
