@@ -42,8 +42,8 @@
 
 PluginInfo = {
   Name        = "Hybridsix Plugins~Win PC Control",
-  Version     = "0.2.0-alpha",
-  BuildVersion= "0.2.0.3",
+  Version     = "0.7.0-beta",
+  BuildVersion= "0.7.3.27d",
   Id          = "dd941513-d452-416e-95eb-b47d08457b36",
   Author      = "Michael King",
   Description = "Remote control a Windows PC from Q-SYS: Wake-on-LAN power on, volume and mute via HTTP, and live status polling."
@@ -610,7 +610,7 @@ function GetControlLayout(props)
     -- Buttons: 130px wide each, 20px gap, centered in W=490
     -- total = 2*130+20 = 280; left edge = (490-280)/2 + 5 = 110
     layout["PowerOn"] = {
-      PrettyName = "Pwr~WOL",
+      PrettyName = "Power~WOL",
       Style      = "Button",
       Legend     = "Power On (WOL)",
       Position   = { 110, 35 },
@@ -619,7 +619,7 @@ function GetControlLayout(props)
     }
   
     layout["Shutdown"] = {
-      PrettyName = "Pwr~Shutdown",
+      PrettyName = "Power~Shutdown",
       Style      = "Button",
       Legend     = "Shutdown",
       Position   = { 260, 35 },

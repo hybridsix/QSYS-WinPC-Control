@@ -34,7 +34,7 @@ if CurrentPage == "Control" then
   -- Buttons: 130px wide each, 20px gap, centered in W=490
   -- total = 2*130+20 = 280; left edge = (490-280)/2 + 5 = 110
   layout["PowerOn"] = {
-    PrettyName = "Pwr~WOL",
+    PrettyName = "Power~WOL",
     Style      = "Button",
     Legend     = "Power On (WOL)",
     Position   = { 110, 35 },
@@ -43,7 +43,7 @@ if CurrentPage == "Control" then
   }
 
   layout["Shutdown"] = {
-    PrettyName = "Pwr~Shutdown",
+    PrettyName = "Power~Shutdown",
     Style      = "Button",
     Legend     = "Shutdown",
     Position   = { 260, 35 },
