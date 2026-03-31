@@ -38,13 +38,61 @@ local OFFLINE_COOLDOWN      = 120  -- seconds of OFFLINE before slowing down
 local baseUrl    = string.format("http://%s:%d", host, httpPort)
 local authHeader = { Authorization = "Bearer " .. authToken }
 
+-- File-based MAC cache: survives design re-deploys. The property value is
+-- reset to its design-time value (often empty) on every push, but the cache
+-- file on /tmp stays intact. Keyed by hostname so multiple plugin instances
+-- don't collide.
+local MAC_CACHE_PATH = "/tmp/winpc_mac_" .. host:gsub("[^%w%-%.%_]", "_") .. ".cache"
+
+local function SaveMacToCache(mac)
+  local ok, err = pcall(function()
+    local f = io.open(MAC_CACHE_PATH, "w")
+    if f then f:write(mac); f:close() end
+  end)
+  if not ok then print("[WinPC] MAC cache write failed: " .. tostring(err)) end
+end
+
+local function LoadMacFromCache()
+  local ok, result = pcall(function()
+    local f = io.open(MAC_CACHE_PATH, "r")
+    if f then
+      local mac = f:read("*a")
+      f:close()
+      if mac and mac:match("%x%x[:%-%.]%x%x") then return mac end
+    end
+    return nil
+  end)
+  if ok then return result end
+  return nil
+end
+
+-- Validate a MAC address string: must be 6 hex pairs separated by : or -
+local function IsValidMac(mac)
+  if not mac or mac == "" then return false end
+  return mac:match("^%x%x[:%-%.]%x%x[:%-%.]%x%x[:%-%.]%x%x[:%-%.]%x%x[:%-%.]%x%x$") ~= nil
+end
+
 -- cachedMac holds the MAC address used for Wake-on-LAN.
--- It is seeded from the MAC Address property if the user set one manually.
--- Once the PC comes online, the server reports its MAC in the /status
--- response and we update cachedMac automatically. This means the user
--- only needs to set the property for the very first WOL before the PC
--- has ever been polled successfully.
-local cachedMac = (macProperty ~= "") and macProperty or nil
+-- Priority: 1) MAC Address property (if valid), 2) cache file on disk
+-- (survives re-deploy), 3) nil (auto-discover when online).
+-- macIsManual is true when the integrator explicitly set a valid MAC in
+-- the Properties panel. When true, auto-discovery will not overwrite it.
+local macIsManual = false
+local cachedMac   = nil
+
+if macProperty ~= "" then
+  if IsValidMac(macProperty) then
+    cachedMac  = macProperty
+    macIsManual = true
+  else
+    print("[WinPC] WARNING: MAC Address property is invalid: '" .. macProperty .. "'")
+    print("[WinPC] Expected format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF")
+    print("[WinPC] Falling back to cached MAC address.")
+    cachedMac = LoadMacFromCache()
+  end
+else
+  cachedMac = LoadMacFromCache()
+end
 
 -- syncedFromPc is false until the first successful poll sets the fader
 -- from the PC's actual volume. While false, Volume/Mute event handlers
@@ -444,11 +492,21 @@ local function DoPoll()
       -- write it back to the MAC Address property so it survives Core restarts.
       -- Only writes when the value changes to avoid dirtying the design unnecessarily.
       if status.MAC and status.MAC ~= "" then
-        if cachedMac ~= status.MAC then
+        -- Always update the cache file so WOL survives re-deploys.
+        -- But only overwrite cachedMac if the integrator didn't manually set one.
+        if macIsManual then
+          -- Manual MAC takes priority; still cache the server-reported MAC
+          -- in case the property is cleared later.
+          SaveMacToCache(status.MAC)
+          if cachedMac ~= status.MAC then
+            dbg("Rx", "Server reported MAC " .. status.MAC .. " (ignored — manual MAC '" .. cachedMac .. "' takes priority)")
+          end
+        elseif cachedMac ~= status.MAC then
           cachedMac = status.MAC
           Properties["MAC Address"].Value = cachedMac
+          SaveMacToCache(cachedMac)
           Controls.MacDisplay.String = cachedMac
-          dbg("Rx", "MAC auto-discovered: " .. cachedMac .. " (saved to property)")
+          dbg("Rx", "MAC auto-discovered: " .. cachedMac .. " (saved to property + cache)")
         end
       end
 
@@ -625,7 +683,7 @@ end
 local function InitSetupControls()
   Controls.CfgComputerName.String = Properties["Computer Name"].Value
   Controls.CfgHostname.String     = Properties["Hostname or IP"].Value
-  Controls.MacDisplay.String      = cachedMac ~= "" and cachedMac or "(auto-discover)"
+  Controls.MacDisplay.String      = (cachedMac and cachedMac ~= "") and cachedMac or "(auto-discover)"
   Controls.CfgHttpPort.Value      = Properties["HTTP Port"].Value
   Controls.CfgPollInterval.Value  = Properties["Poll Interval (s)"].Value
   Controls.CfgAuthToken.String    = Properties["Auth Token"].Value
@@ -667,4 +725,13 @@ Controls.VolumeWarning.Boolean = false
 InitSetupControls()
 pollTimer:Start(pollInterval)
 print("[WinPC] Plugin started. Polling " .. (host ~= "" and host or "(no hostname set)") .. " every " .. pollInterval .. "s.")
+if cachedMac and cachedMac ~= "" then
+  if macIsManual then
+    print("[WinPC] MAC address from property (manual): " .. cachedMac)
+  else
+    print("[WinPC] MAC address from cache file: " .. cachedMac)
+  end
+else
+  print("[WinPC] No MAC address available — will auto-discover when PC comes online.")
+end
 
