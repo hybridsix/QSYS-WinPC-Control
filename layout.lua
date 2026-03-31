@@ -3,7 +3,7 @@ local CurrentPage = PageNames[props["page_index"].Value]
 -- ============================================================
 -- CONTROL PAGE
 -- ============================================================
-  -- Layout constants — 5px grid, panel width = 500px (boxes x=5, w=490):
+  -- Layout constants - 5px grid, panel width = 500px (boxes x=5, w=490):
   --
   --  Power Control box:   y=5,   h=80  → bottom=85
   --  gap=10
@@ -270,7 +270,7 @@ elseif CurrentPage == "Setup" then
     })
   end
 
-  -- Auto-populated / read-only fields — grey styling, no border.
+  -- Auto-populated / read-only fields - grey styling, no border.
   local function cfg_auto(name, y)
     return {
       PrettyName  = "Setup~" .. name,
@@ -285,7 +285,7 @@ elseif CurrentPage == "Setup" then
     }
   end
 
-  -- Editable fields — black fill, white text, cyan border.
+  -- Editable fields - black fill, white text, cyan border.
   local function cfg_edit(name, y)
     return {
       PrettyName  = "Setup~" .. name,

@@ -1,4 +1,4 @@
-# Remote PC Control — Ubuntu Agent
+# Remote PC Control - Ubuntu Agent
 
 HTTP control server that lets a Q-SYS Core remotely control volume, mute, and power on an Ubuntu 24.04 LTS PC.
 
@@ -76,7 +76,7 @@ This removes the systemd service, firewall rule, sudoers entry, and the working 
 
 ## Protocol compatibility
 
-The Ubuntu agent is protocol-identical to the Windows agent. The Q-SYS plugin doesn't need any changes — it works with either agent transparently:
+The Ubuntu agent is protocol-identical to the Windows agent. The Q-SYS plugin doesn't need any changes - it works with either agent transparently:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|

@@ -74,7 +74,7 @@ function Show-Banner {
     Write-Host "  volume, mute, and power on this PC." -ForegroundColor DarkGray
     Write-Host "  Closing this window will stop the server." -ForegroundColor DarkGray
     Write-Host ""
-    # Record cursor row — all status lines will be drawn from here down
+    # Record cursor row - all status lines will be drawn from here down
     $script:statusStartRow = $Host.UI.RawUI.CursorPosition.Y
 }
 
@@ -109,7 +109,7 @@ function Update-ConsoleStatus {
         $Host.UI.RawUI.WindowTitle = "Remote PC Control - Waiting for Q-SYS..."
     }
 
-    # Overwrite status area in place — no Clear-Host, no flicker
+    # Overwrite status area in place - no Clear-Host, no flicker
     $width = $Host.UI.RawUI.BufferSize.Width
     $blank = " " * $width
     for ($i = 0; $i -lt $STATUS_MAX_LINES; $i++) {
@@ -232,7 +232,7 @@ public static class AudioHelper {
             if (afterPct == percent) {
                 return string.Format("scalar {0}%->{1}%", beforePct, afterPct);
             }
-            // Scalar returned S_OK but didn't change volume — driver ignores it.
+            // Scalar returned S_OK but didn't change volume - driver ignores it.
             if (afterPct == beforePct) {
                 scalarWorks = false;
             }

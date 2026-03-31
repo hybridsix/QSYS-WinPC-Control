@@ -1,4 +1,4 @@
-# test-audio.ps1 — Multi-method diagnostic for SetVolume
+# test-audio.ps1 - Multi-method diagnostic for SetVolume
 # Run this in an interactive (non-elevated) PowerShell window.
 
 Add-Type -TypeDefinition @"

@@ -154,7 +154,7 @@ table.insert(ctrls, {
 
 
 -- -------------------------------------------------------------
--- Setup page editable fields — mirror Properties for runtime editing.
+-- Setup page editable fields - mirror Properties for runtime editing.
 -- These are text/integer entry controls placed on the Setup tab.
 -- The Update button writes their values back to Properties.
 -- -------------------------------------------------------------

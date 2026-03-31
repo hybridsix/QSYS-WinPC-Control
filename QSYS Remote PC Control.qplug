@@ -492,7 +492,7 @@ function GetControls(props)
   
   
   -- -------------------------------------------------------------
-  -- Setup page editable fields — mirror Properties for runtime editing.
+  -- Setup page editable fields - mirror Properties for runtime editing.
   -- These are text/integer entry controls placed on the Setup tab.
   -- The Update button writes their values back to Properties.
   -- -------------------------------------------------------------
@@ -581,7 +581,7 @@ function GetControlLayout(props)
   -- ============================================================
   -- CONTROL PAGE
   -- ============================================================
-    -- Layout constants — 5px grid, panel width = 500px (boxes x=5, w=490):
+    -- Layout constants - 5px grid, panel width = 500px (boxes x=5, w=490):
     --
     --  Power Control box:   y=5,   h=80  → bottom=85
     --  gap=10
@@ -848,7 +848,7 @@ function GetControlLayout(props)
       })
     end
   
-    -- Auto-populated / read-only fields — grey styling, no border.
+    -- Auto-populated / read-only fields - grey styling, no border.
     local function cfg_auto(name, y)
       return {
         PrettyName  = "Setup~" .. name,
@@ -863,7 +863,7 @@ function GetControlLayout(props)
       }
     end
   
-    -- Editable fields — black fill, white text, cyan border.
+    -- Editable fields - black fill, white text, cyan border.
     local function cfg_edit(name, y)
       return {
         PrettyName  = "Setup~" .. name,

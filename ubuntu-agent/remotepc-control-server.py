@@ -26,21 +26,24 @@ import signal
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from threading import Timer
+from threading import Timer           # used to delay shutdown so the HTTP response goes out first
 
 # ============================================
 # CONFIGURATION
 # ============================================
 
+# Paths here must match what install.sh creates
 WORK_DIR    = "/opt/qsys-remotepc-control"
 CONFIG_FILE = os.path.join(WORK_DIR, "config.txt")
 LOG_FILE    = os.path.join(WORK_DIR, "server.log")
-LOG_MAX_LINES = 500
+LOG_MAX_LINES = 500    # keep the log file from growing unbounded
 
-_log_write_count = 0
+_log_write_count = 0   # running counter - triggers trim every 100 writes
 
 
 def read_config():
+    """Load PORT and TOKEN from config.txt (KEY=VALUE format, one per line).
+    Falls back to defaults if the file is missing or a key isn't present."""
     cfg = {"PORT": "2207", "TOKEN": ""}
     if os.path.isfile(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
@@ -66,19 +69,24 @@ if not TOKEN:
 # ============================================
 
 def write_log(message):
+    """Append a timestamped line to server.log. We don't use Python's logging
+    module - overkill for a single-file log that just needs timestamps."""
     global _log_write_count
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(LOG_FILE, "a") as f:
             f.write(f"[{ts}] {message}\n")
     except OSError:
-        pass
+        pass  # not much we can do if the log itself is broken
     _log_write_count += 1
     if _log_write_count % 100 == 0:
         trim_log()
 
 
 def trim_log():
+    """Chop the log to the most recent LOG_MAX_LINES entries.
+    Called once at startup and periodically after that to prevent
+    the file from growing forever on a PC that runs for months."""
     if not os.path.isfile(LOG_FILE):
         return
     try:
@@ -92,11 +100,20 @@ def trim_log():
 
 
 # ============================================
-# AUDIO CONTROL  (pactl — PulseAudio / PipeWire)
+# AUDIO CONTROL  (pactl - PulseAudio / PipeWire)
 # ============================================
+# All volume/mute control goes through pactl, which talks to whatever audio
+# server the desktop session is running (PipeWire on Ubuntu 24.04, or classic
+# PulseAudio on older installs). The pactl CLI comes from pulseaudio-utils.
+#
+# Important: pactl needs to connect to the user's audio daemon, which is why
+# the systemd service runs as a --user unit (not system-level). Running this
+# as root or a different user means pactl won't find any sinks.
 
 def _run_pactl(args):
-    """Run a pactl command, returning stdout. Raises on failure."""
+    """Run a pactl command and return its stdout.
+    Raises RuntimeError on non-zero exit. 5s timeout is generous -
+    pactl usually returns in well under 50ms."""
     result = subprocess.run(
         ["pactl"] + args,
         capture_output=True, text=True, timeout=5
@@ -107,10 +124,12 @@ def _run_pactl(args):
 
 
 def get_volume():
-    """Return master volume as integer 0-100."""
+    """Return master volume as integer 0-100, or -1 on error."""
     try:
         out = _run_pactl(["get-sink-volume", "@DEFAULT_SINK@"])
-        # Output like: "Volume: front-left: 42000 /  64% / -11.78 dB,   front-left: ..."
+        # pactl output looks something like:
+        #   Volume: front-left: 42000 /  64% / -11.78 dB,   front-right: ...
+        # We just grab the first percentage - good enough for master vol.
         m = re.search(r"(\d+)%", out)
         if m:
             return int(m.group(1))
@@ -121,12 +140,15 @@ def get_volume():
 
 
 def set_volume(percent):
-    """Set master volume to percent (0-100). Returns diagnostic string."""
+    """Set master volume to percent (0-100). Returns a diagnostic string
+    for logging, e.g. 'set 45%->70%' or 'already 70%'."""
     percent = max(0, min(100, percent))
     try:
         before = get_volume()
         if before == percent:
             return f"already {percent}%"
+        # @DEFAULT_SINK@ targets whatever output the desktop session considers
+        # primary - no need to enumerate sinks ourselves
         _run_pactl(["set-sink-volume", "@DEFAULT_SINK@", f"{percent}%"])
         after = get_volume()
         write_log(f"Volume set to {percent}% (readBack={after}%)")
@@ -137,18 +159,17 @@ def set_volume(percent):
 
 
 def get_mute():
-    """Return True if muted, False otherwise."""
+    """Check whether the default sink is muted."""
     try:
         out = _run_pactl(["get-sink-mute", "@DEFAULT_SINK@"])
-        # Output like: "Mute: yes" or "Mute: no"
-        return "yes" in out.lower()
+        return "yes" in out.lower()   # output is literally "Mute: yes" or "Mute: no"
     except Exception as e:
         write_log(f"ERROR reading mute: {e}")
         return False
 
 
 def set_mute(muted):
-    """Set mute state. muted: bool."""
+    """Mute or unmute the default sink. pactl takes 1/0 for mute/unmute."""
     try:
         val = "1" if muted else "0"
         _run_pactl(["set-sink-mute", "@DEFAULT_SINK@", val])
@@ -163,9 +184,12 @@ def set_mute(muted):
 # ============================================
 
 def get_mac_address():
-    """Get MAC of the default-route network interface."""
+    """Get the MAC address of whichever NIC handles the default route.
+    The Q-SYS plugin caches this for Wake-on-LAN - it needs the MAC
+    even when the PC is powered off, so it grabs it during status polls."""
     try:
-        # Find the interface used for the default route
+        # `ip route show default` gives us the outbound interface name.
+        # Typical output: "default via 192.168.1.1 dev eth0 proto dhcp ..."
         result = subprocess.run(
             ["ip", "route", "show", "default"],
             capture_output=True, text=True, timeout=5
@@ -175,7 +199,8 @@ def get_mac_address():
             return ""
         iface = m.group(1)
 
-        # Read its MAC address
+        # Pull the hardware address from that interface
+        # `ip link show eth0` includes: "link/ether aa:bb:cc:dd:ee:ff brd ..."
         result = subprocess.run(
             ["ip", "link", "show", iface],
             capture_output=True, text=True, timeout=5
@@ -193,12 +218,15 @@ def get_hostname():
 
 
 def get_status_body():
+    """Build the status response body. The Q-SYS plugin parses these key:value
+    lines - the order doesn't matter but the keys must match exactly."""
     vol      = get_volume()
     muted    = get_mute()
     mute_int = "1" if muted else "0"
     ts       = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     mac      = get_mac_address()
     hostname = get_hostname()
+    # CRLF line endings match the Windows agent (the Lua parser handles both)
     return f"VOLUME:{vol}\r\nMUTE:{mute_int}\r\nMAC:{mac}\r\nHOSTNAME:{hostname}\r\nUPDATED:{ts}\r\n"
 
 
@@ -207,6 +235,8 @@ def get_status_body():
 # ============================================
 
 def invoke_command(raw_message):
+    """Parse and execute a command from the Q-SYS plugin.
+    Format is always COMMAND:VALUE, e.g. VOLUME:65, MUTE:1, SHUTDOWN."""
     write_log(f"CMD: {raw_message}")
 
     parts   = raw_message.split(":", 1)
@@ -216,7 +246,7 @@ def invoke_command(raw_message):
     if command == "VOLUME":
         try:
             pct = int(value)
-            pct = max(0, min(100, pct))
+            pct = max(0, min(100, pct))   # clamp just in case
             set_volume(pct)
         except ValueError:
             write_log(f"ERROR: bad volume value '{value}'")
@@ -231,7 +261,8 @@ def invoke_command(raw_message):
 
     elif command == "SHUTDOWN":
         write_log("Shutdown command received - initiating")
-        # Delay to allow HTTP response to complete
+        # Fire the actual shutdown on a 1-second timer so the HTTP 200
+        # response has time to get back to Q-SYS before we go down
         Timer(1.0, _do_shutdown).start()
 
     else:
@@ -239,6 +270,9 @@ def invoke_command(raw_message):
 
 
 def _do_shutdown():
+    """Called from a Timer thread after the HTTP response is sent.
+    Needs sudo - the sudoers drop-in from install.sh grants
+    NOPASSWD for /sbin/shutdown so this works without prompting."""
     subprocess.run(["sudo", "shutdown", "now"], timeout=10)
 
 
@@ -247,13 +281,21 @@ def _do_shutdown():
 # ============================================
 
 class QSYSHandler(BaseHTTPRequestHandler):
-    """Handles Q-SYS plugin HTTP requests."""
+    """HTTP request handler for Q-SYS plugin communication.
 
-    # Suppress default stderr logging — we use our own log
+    Two endpoints:
+      /status  - GET, returns volume/mute/mac/hostname
+      /command - POST (or GET with ?cmd= for Q-SYS Designer emulate mode)
+
+    Every request must carry the Bearer token or it gets a 401."""
+
+    # Kill the default BaseHTTPRequestHandler stderr logging -
+    # we write everything to server.log ourselves
     def log_message(self, format, *args):
         pass
 
     def _check_auth(self):
+        """Validate the Bearer token. Returns False (and sends 401) on mismatch."""
         auth = self.headers.get("Authorization", "")
         if auth != f"Bearer {TOKEN}":
             write_log(f"AUTH FAIL from {self.client_address[0]}:{self.client_address[1]}")
@@ -262,6 +304,7 @@ class QSYSHandler(BaseHTTPRequestHandler):
         return True
 
     def _send(self, code, body="", content_type="text/plain; charset=utf-8"):
+        """Send a complete HTTP response. Handles encoding and Content-Length."""
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         encoded = body.encode("utf-8") if body else b""
@@ -280,11 +323,14 @@ class QSYSHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/status":
+            # Normal poll - the plugin hits this every few seconds
             body = get_status_body()
             self._send(200, body)
 
         elif path == "/command":
-            # Q-SYS emulate mode sends GET with ?cmd= query string
+            # Q-SYS Designer's emulate mode downgrades POST to GET and drops
+            # the body entirely, so commands arrive as ?cmd= query params.
+            # On real Core hardware POST works fine (handled in do_POST).
             qs = parse_qs(parsed.query)
             cmd = qs.get("cmd", [""])[0].strip()
             if cmd:
@@ -306,16 +352,19 @@ class QSYSHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/command":
+            # Read the POST body - command string like "VOLUME:65"
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length).decode("utf-8").strip() if content_length > 0 else ""
 
-            # Fall back to ?cmd= query string (Q-SYS emulate mode)
+            # If the body is empty, check query string as a fallback
+            # (covers the GET-downgrade edge case from emulate mode)
             if not body:
                 qs = parse_qs(parsed.query)
                 body = qs.get("cmd", [""])[0].strip()
 
             if body:
-                # Send OK before processing (especially for SHUTDOWN)
+                # Respond 200 before executing - critical for SHUTDOWN,
+                # otherwise the response never makes it back to Q-SYS
                 self._send(200, "OK")
                 invoke_command(body)
             else:
@@ -330,7 +379,9 @@ class QSYSHandler(BaseHTTPRequestHandler):
 # ============================================
 
 def main():
-    # Wait for audio subsystem to be ready (PipeWire/PulseAudio may start slowly)
+    # PipeWire (or PulseAudio) may not be fully initialized yet when the
+    # systemd user service kicks off at boot - especially on slower hardware.
+    # We retry for up to 30 seconds before giving up.
     audio_ready = False
     for attempt in range(15):
         try:
@@ -344,13 +395,16 @@ def main():
     if not audio_ready:
         write_log("WARNING: Audio subsystem not ready after 30 seconds - volume/mute may not work")
 
-    trim_log()
+    trim_log()    # housekeeping from previous runs
 
+    # Bind on all interfaces so the Q-SYS Core can reach us regardless
+    # of which NIC or VLAN it's coming from
     server = HTTPServer(("0.0.0.0", PORT), QSYSHandler)
     write_log(f"=== RemotePCControlServer (Linux) started on port {PORT} ===")
     print(f"Remote PC Control Server listening on port {PORT}")
 
-    # Graceful shutdown on SIGTERM (systemd sends this on stop)
+    # systemd sends SIGTERM on `systemctl --user stop`, SIGINT covers Ctrl+C
+    # during manual testing from a terminal
     def handle_signal(signum, frame):
         write_log("=== RemotePCControlServer stopped (signal) ===")
         server.shutdown()

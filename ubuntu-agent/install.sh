@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+# Port and token can be passed as positional args:
+#   sudo bash install.sh 8080 "my-custom-token"
+# Both are optional - defaults to port 2207 and auto-generated token.
 PORT="${1:-2207}"
 TOKEN="${2:-}"
 
@@ -33,7 +36,8 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Detect the real user (not root) who invoked sudo
+# Figure out who actually ran sudo - we need their home dir
+# and UID to set up the systemd user service correctly.
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo "~$REAL_USER")
 REAL_UID=$(id -u "$REAL_USER")
@@ -43,6 +47,8 @@ if [[ "$REAL_USER" == "root" ]]; then
     exit 1
 fi
 
+# The script dir is where install.sh lives - the server script
+# should be sitting right next to it.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 step()  { echo -e "\n  >> $1"; }
@@ -60,6 +66,8 @@ echo ""
 
 # ---- Step 1: Install dependencies ----
 step "Checking dependencies"
+# python3 is usually already present on Ubuntu 24.04 but we check anyway.
+# pulseaudio-utils gives us the pactl command for volume/mute control.
 DEPS_NEEDED=""
 command -v python3 >/dev/null 2>&1 || DEPS_NEEDED="$DEPS_NEEDED python3"
 command -v pactl   >/dev/null 2>&1 || DEPS_NEEDED="$DEPS_NEEDED pulseaudio-utils"
@@ -106,6 +114,8 @@ step "Generating auth token"
 if [[ -n "$TOKEN" ]]; then
     echo "     Using supplied token."
 else
+    # 32 random bytes -> base64 gives a 44-char string.
+    # Same approach the Windows installer uses (RNGCryptoServiceProvider).
     TOKEN=$(python3 -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())")
 fi
 
@@ -114,42 +124,53 @@ PORT=$PORT
 TOKEN=$TOKEN
 EOF
 chown "$REAL_USER:$REAL_USER" "$CONFIG_FILE"
-chmod 600 "$CONFIG_FILE"
+chmod 600 "$CONFIG_FILE"    # only the owning user should read the token
 ok "Token saved to $CONFIG_FILE"
 
 
 # ---- Step 5: Configure passwordless shutdown via sudoers ----
+# The server script calls `sudo shutdown now` when it gets a SHUTDOWN
+# command from Q-SYS. Without this sudoers entry, it would hang waiting
+# for a password prompt in a headless session.
 step "Configuring passwordless shutdown for $REAL_USER"
 cat > "$SUDOERS_FILE" <<EOF
 # Allow Remote PC Control server to shut down without a password
 $REAL_USER ALL=(ALL) NOPASSWD: /sbin/shutdown
 EOF
 chmod 440 "$SUDOERS_FILE"
-# Validate the sudoers file
+# Always validate sudoers syntax - a broken file here can lock you
+# out of sudo entirely, which would be very bad.
 if visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1; then
     ok "Sudoers rule created at $SUDOERS_FILE"
 else
     rm -f "$SUDOERS_FILE"
-    fail "Sudoers syntax check failed — file removed"
+    fail "Sudoers syntax check failed - file removed"
 fi
 
 
 # ---- Step 6: Add UFW firewall rule ----
+# Most Ubuntu desktop installs have UFW active by default.
+# If it's not installed we just warn - the admin knows their firewall.
 step "Adding UFW firewall rule (TCP port $PORT)"
 if command -v ufw >/dev/null 2>&1; then
     ufw allow "$PORT/tcp" comment "Remote PC Control HTTP" >/dev/null 2>&1 || true
     ok "UFW rule added (TCP $PORT inbound)"
 else
-    echo "     [WARN] ufw not found — manually open TCP port $PORT in your firewall"
+    echo "     [WARN] ufw not found - manually open TCP port $PORT in your firewall"
 fi
 
 
 # ---- Step 7: Create systemd user service ----
+# This runs as a user-level service (not system) because the audio subsystem
+# (PipeWire/PulseAudio) is only accessible from the user's own session.
+# Running as a system service would mean pactl can't find any sinks.
 step "Creating systemd user service"
 SERVICE_DIR="$REAL_HOME/.config/systemd/user"
 mkdir -p "$SERVICE_DIR"
 chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config"
 
+# DISPLAY=:0 is set so the service has access to X11/Wayland if needed.
+# sound.target ensures PipeWire is up before we try to use pactl.
 cat > "$SERVICE_DIR/$SERVICE_NAME.service" <<EOF
 [Unit]
 Description=Remote PC Control Server for Q-SYS
@@ -168,10 +189,12 @@ WantedBy=default.target
 EOF
 chown "$REAL_USER:$REAL_USER" "$SERVICE_DIR/$SERVICE_NAME.service"
 
-# Enable and start the service as the real user
-# loginctl enable-linger allows user services to run without an active login session
+# enable-linger lets user services run even when nobody is logged in.
+# Without it the service would stop when the user's last session closes.
 loginctl enable-linger "$REAL_USER" 2>/dev/null || true
 
+# XDG_RUNTIME_DIR must be set explicitly when running systemctl --user
+# from a sudo context, otherwise systemd can't find the user's bus.
 sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" \
     systemctl --user daemon-reload
 

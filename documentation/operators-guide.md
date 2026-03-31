@@ -87,16 +87,16 @@ Note: Volume and mute commands are silently ignored when the PC is not **Online*
 
 The Setup tab shows the current configuration. Fields are visually split into two groups:
 
-**Grey fields (auto-populated)** — these are populated from Properties on startup and updated automatically (e.g., MAC Address is discovered on each poll). They cannot be changed at runtime from this page; edit them in the Properties panel instead.
+**Grey fields (auto-populated)** - these are populated from Properties on startup and updated automatically (e.g., MAC Address is discovered on each poll). They cannot be changed at runtime from this page; edit them in the Properties panel instead.
 
 | Field | What it shows |
 |---|---|
 | Computer Name | The friendly label set in Properties |
 | Hostname / IP | The address the plugin connects to |
-| MAC Address | Used for Wake-on-LAN — auto-discovered after first poll and saved to the property automatically |
+| MAC Address | Used for Wake-on-LAN - auto-discovered after first poll and saved to the property automatically |
 | Auth Token | The bearer token for HTTP authentication |
 
-**Cyan-bordered fields (editable at runtime)** — you can change these while the plugin is running and press the **Update** button to apply.
+**Cyan-bordered fields (editable at runtime)** - you can change these while the plugin is running and press the **Update** button to apply.
 
 | Field | What it does |
 |---|---|
@@ -127,7 +127,7 @@ The PC is reporting a volume level outside the Vol Min / Vol Max range you've co
 
 ### Status is stuck on Booting...
 
-The plugin has a 120-second safety timeout — if the PC doesn't come online within 2 minutes of a WOL, the status automatically returns to **Offline**. If this keeps happening, check:
+The plugin has a 120-second safety timeout - if the PC doesn't come online within 2 minutes of a WOL, the status automatically returns to **Offline**. If this keeps happening, check:
 - The user account is logged in (the server requires an active user session)
 - Task Scheduler -> `Remote PC Control Server` task exists and is enabled
 - No error in `C:\QSYS Remote PC Control\server.log` on the PC
