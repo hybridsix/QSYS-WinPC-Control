@@ -29,6 +29,12 @@ local httpPort     = Properties["HTTP Port"].Value
 local authToken    = Properties["Auth Token"].Value
 local pollInterval = Properties["Poll Interval (s)"].Value
 
+-- Adaptive polling: after the PC has been OFFLINE for OFFLINE_COOLDOWN seconds,
+-- polling slows to OFFLINE_POLL_INTERVAL to reduce unnecessary network traffic
+-- and CPU cycles. Normal polling resumes immediately when PowerOn (WOL) is pressed.
+local OFFLINE_POLL_INTERVAL = 60   -- seconds between polls when PC is known offline
+local OFFLINE_COOLDOWN      = 120  -- seconds of OFFLINE before slowing down
+
 local baseUrl    = string.format("http://%s:%d", host, httpPort)
 local authHeader = { Authorization = "Bearer " .. authToken }
 
@@ -54,6 +60,15 @@ local bootingSince = nil
 -- DoPoll uses it to auto-recover to OFFLINE if shutdown takes too long (>120s),
 -- guarding against the server dying before Windows fully shuts down.
 local shuttingDownSince = nil
+
+-- offlineSince records the os.time() when OFFLINE state was entered.
+-- After OFFLINE_COOLDOWN seconds, the poll timer switches to a slower interval
+-- to avoid polling a dead endpoint all night.
+local offlineSince = nil
+
+-- slowPolling tracks whether we have already switched to the slow rate,
+-- so we only log the transition once.
+local slowPolling = false
 
 -- updatingFromPoll is true while DoPoll is writing volume/mute back into the
 -- Q-SYS controls. Blocks the EventHandlers from echoing the PC's own state
@@ -85,12 +100,16 @@ local function SetState(newState)
     Controls.OnlineStatus.Boolean = true
     Controls.StatusText.String    = "Online"
     Controls.StatusText.Color     = "#00B400"
+    offlineSince = nil
+    slowPolling  = false
 
   elseif newState == "BOOTING" then
     Controls.OnlineStatus.Boolean = false
     Controls.StatusText.String    = "Booting..."
     Controls.StatusText.Color     = "#C88200"
     bootingSince = os.time()
+    offlineSince = nil
+    slowPolling  = false
 
   elseif newState == "SHUTTING_DOWN" then
     Controls.OnlineStatus.Boolean = false
@@ -104,6 +123,7 @@ local function SetState(newState)
     Controls.StatusText.String    = "Offline"
     Controls.StatusText.Color     = "#B40000"
     syncedFromPc = false           -- require re-sync before next commands fire
+    offlineSince = os.time()       -- start the cooldown for adaptive polling
     Controls.Volume.Value         = 0
     Controls.VolumeEntry.Value    = 0
     Controls.Mute.Boolean         = false
@@ -261,6 +281,16 @@ local function SendWOL()
   if State ~= "ONLINE" then
     SetState("BOOTING")
   end
+
+  -- Immediately switch back to the fast poll rate so we detect the PC
+  -- coming online as quickly as possible. Without this, we could be
+  -- sitting on a 60-second slow-poll timer from the offline cooldown.
+  pollTimer:Stop()
+  pollTimer:Start(pollInterval)
+  if slowPolling then
+    print("[WinPC] Resuming fast poll at " .. pollInterval .. "s")
+    slowPolling = false
+  end
 end
 
 
@@ -390,10 +420,15 @@ local function DoPoll()
           -- Show warning LED if PC volume is outside our configured limits.
           Controls.VolumeWarning.Boolean = (v < lo or v > hi)
           -- Only write to the fader if the user isn't actively dragging.
+          -- Show the ACTUAL PC volume (not clamped) so the operator can see
+          -- the real state. Clamping only applies when the user moves the
+          -- fader or types a value -- outbound commands get clamped, but the
+          -- display reflects reality.
           local timeSinceTouch = os.clock() - volLastUserTouch
           if timeSinceTouch >= VOL_TOUCH_COOLDOWN then
-            Controls.Volume.Value = ClampVolume(v)
-            Controls.VolumeEntry.Value = ClampVolume(v)
+            local rounded = math.floor(v + 0.5)
+            Controls.Volume.Value = rounded
+            Controls.VolumeEntry.Value = rounded
           end
         end
       end
@@ -494,7 +529,21 @@ pollTimer.EventHandler = function()
   if not ok then
     print("[WinPC] ERROR in DoPoll: " .. tostring(luaErr))
   end
-  pollTimer:Start(pollInterval)
+
+  -- Adaptive polling: use the slow interval if the PC has been offline
+  -- longer than the cooldown period, otherwise use the configured rate.
+  local interval = pollInterval
+  if State == "OFFLINE" and offlineSince then
+    local elapsed = os.time() - offlineSince
+    if elapsed >= OFFLINE_COOLDOWN then
+      interval = OFFLINE_POLL_INTERVAL
+      if not slowPolling then
+        print("[WinPC] Offline >" .. OFFLINE_COOLDOWN .. "s, slowing poll to " .. OFFLINE_POLL_INTERVAL .. "s")
+        slowPolling = true
+      end
+    end
+  end
+  pollTimer:Start(interval)
 end
 
 

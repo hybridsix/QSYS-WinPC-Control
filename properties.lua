@@ -74,13 +74,15 @@ table.insert(props, {
 -- How often (in seconds) to send GET /status to check if the
 -- PC is online and to sync volume/mute back to Q-SYS.
 -- Shorter interval = faster status updates but more traffic.
--- 15 seconds is a reasonable default for most installs.
+-- 5 seconds is a good default for responsive audio control.
+-- When the PC is OFFLINE for an extended period, the plugin
+-- automatically slows polling to conserve resources.
 -- -------------------------------------------------------------
 table.insert(props, {
   Name  = "Poll Interval (s)",
   Type  = "integer",
-  Min   = 5,
+  Min   = 1,
   Max   = 300,
-  Value = 15
+  Value = 5
 })
 
