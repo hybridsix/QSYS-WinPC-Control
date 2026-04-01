@@ -109,6 +109,10 @@ local bootingSince = nil
 -- guarding against the server dying before Windows fully shuts down.
 local shuttingDownSince = nil
 
+-- restartingSince records the os.time() when RESTARTING state was entered.
+-- DoPoll uses it to auto-recover to OFFLINE if restart takes too long (>120s).
+local restartingSince = nil
+
 -- offlineSince records the os.time() when OFFLINE state was entered.
 -- After OFFLINE_COOLDOWN seconds, the poll timer switches to a slower interval
 -- to avoid polling a dead endpoint all night.
@@ -132,6 +136,8 @@ local updatingFromPoll = false
 --                 (poll failures here don't immediately flip to OFFLINE)
 -- ONLINE        - server responded HTTP 200
 -- SHUTTING_DOWN - shutdown accepted, waiting for the PC to drop off
+-- RESTARTING    - restart accepted, waiting for the PC to drop off
+--                 then transitions to BOOTING when poll fails
 -- -------------------------------------------------------------
 
 local State = ""  -- blank so startup SetState("OFFLINE") always fires and initialises controls
@@ -144,6 +150,14 @@ local function SetState(newState)
   print("[RemotePC] State -> " .. newState)
 
   -- Update the Controls to reflect the new state.
+  -- Power button lockouts: only enable buttons that apply to the current state.
+  -- OFFLINE: PowerOn only. ONLINE: Shutdown+Restart only. All others: all disabled.
+  local isOnline  = (newState == "ONLINE")
+  local isOffline = (newState == "OFFLINE")
+  Controls.PowerOn.IsDisabled  = not isOffline
+  Controls.Shutdown.IsDisabled = not isOnline
+  Controls.Restart.IsDisabled  = not isOnline
+
   if newState == "ONLINE" then
     Controls.OnlineStatus.Boolean = true
     Controls.StatusText.String    = "Online"
@@ -164,6 +178,12 @@ local function SetState(newState)
     Controls.StatusText.String    = "Shutting Down..."
     Controls.StatusText.Color     = "#C88200"
     shuttingDownSince = os.time()
+
+  elseif newState == "RESTARTING" then
+    Controls.OnlineStatus.Boolean = false
+    Controls.StatusText.String    = "Restarting..."
+    Controls.StatusText.Color     = "#C88200"
+    restartingSince = os.time()
 
   else
     -- OFFLINE -- also reset audio controls so they don't show stale values.
@@ -359,6 +379,19 @@ local function SendShutdown()
   end)
 end
 
+-- Tell the PC to restart. If the server confirms with 200, we move
+-- to RESTARTING state. The PC will go offline then come back up.
+local function SendRestart()
+  dbg("Tx", "Sending RESTART command")
+  http_post("RESTART", function(code, _, err)
+    if code == 200 then
+      SetState("RESTARTING")
+    else
+      print("[RemotePC] Restart command failed. HTTP " .. tostring(code) .. " / " .. tostring(err))
+    end
+  end)
+end
+
 -- Send volume as an integer 0-100, clamped to the user-configured Min/Max.
 -- The server maps this to the Windows master volume via the Core Audio API.
 local function ClampVolume(v)
@@ -540,6 +573,11 @@ local function DoPoll()
         -- PC is now powering off. Move to OFFLINE.
         SetState("OFFLINE")
 
+      elseif State == "RESTARTING" then
+        -- Expected -- the restart command was accepted and the PC is
+        -- rebooting. Move to BOOTING so we wait for it to come back.
+        SetState("BOOTING")
+
       else
         -- Unexpected failure. Mark offline.
         SetState("OFFLINE")
@@ -566,6 +604,17 @@ local function DoPoll()
       local elapsed = os.time() - shuttingDownSince
       if elapsed > 120 then
         print("[RemotePC] Shutdown timeout (" .. elapsed .. "s) -- forcing OFFLINE")
+        SetState("OFFLINE")
+      end
+    end
+
+    -- Safety net: if RESTARTING has persisted for more than 120 seconds,
+    -- the restart likely failed. Transition to BOOTING then let that
+    -- timeout handle the final OFFLINE transition.
+    if State == "RESTARTING" and restartingSince then
+      local elapsed = os.time() - restartingSince
+      if elapsed > 120 then
+        print("[RemotePC] Restart timeout (" .. elapsed .. "s) -- forcing OFFLINE")
         SetState("OFFLINE")
       end
     end
@@ -633,6 +682,13 @@ end
 Controls.Shutdown.EventHandler = function()
   if not RequireOnline("Shutdown") then return end
   SendShutdown()
+end
+
+-- Restart: Tells the server to initiate a Windows restart.
+-- Only works when ONLINE -- guard prevents blind commands.
+Controls.Restart.EventHandler = function()
+  if not RequireOnline("Restart") then return end
+  SendRestart()
 end
 
 -- Volume: Syncs the fader value to Windows master volume (0-100 integer, clamped to Min/Max).

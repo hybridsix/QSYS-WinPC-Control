@@ -36,6 +36,16 @@ table.insert(ctrls, {
   Icon        = "Power"
 })
 
+table.insert(ctrls, {
+  Name        = "Restart",
+  ControlType = "Button",
+  ButtonType  = "Momentary",
+  Count       = 1,
+  UserPin     = true,
+  PinStyle    = "Input",
+  Icon        = "Power"
+})
+
 
 -- -------------------------------------------------------------
 -- Status indicators -- all output-only, reflect PC state.

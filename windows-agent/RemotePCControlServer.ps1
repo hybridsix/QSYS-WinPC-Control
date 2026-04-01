@@ -352,6 +352,11 @@ function Invoke-QSYSCommand {
             Start-Sleep -Seconds 1   # Allow HTTP response to complete first
             & shutdown /s /f /t 0
         }
+        "RESTART" {
+            Write-Log "Restart command received - initiating"
+            Start-Sleep -Seconds 1   # Allow HTTP response to complete first
+            & shutdown /r /f /t 0
+        }
         default {
             Write-Log "WARNING: unknown command '$command'"
         }

@@ -31,23 +31,32 @@ if CurrentPage == "Control" then
     Size         = { W, 80 }
   })
 
-  -- Buttons: 130px wide each, 20px gap, centered in W=490
-  -- total = 2*130+20 = 280; left edge = (490-280)/2 + 5 = 110
+  -- Buttons: 120px wide each, 15px gaps, centered in W=490
+  -- total = 3*120+2*15 = 390; left edge = (490-390)/2 + 5 = 55
   layout["PowerOn"] = {
     PrettyName = "Power~WOL",
     Style      = "Button",
     Legend     = "Power On (WOL)",
-    Position   = { 110, 35 },
-    Size       = { 130, 30 },
+    Position   = { 55, 35 },
+    Size       = { 120, 30 },
     Color      = { 0, 200, 220 }
+  }
+
+  layout["Restart"] = {
+    PrettyName = "Power~Restart",
+    Style      = "Button",
+    Legend     = "Restart",
+    Position   = { 190, 35 },
+    Size       = { 120, 30 },
+    Color      = { 255, 200, 0 }
   }
 
   layout["Shutdown"] = {
     PrettyName = "Power~Shutdown",
     Style      = "Button",
     Legend     = "Shutdown",
-    Position   = { 260, 35 },
-    Size       = { 130, 30 },
+    Position   = { 325, 35 },
+    Size       = { 120, 30 },
     Color      = { 255, 140, 0 }
   }
 
