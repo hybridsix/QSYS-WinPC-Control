@@ -255,7 +255,7 @@ elseif CurrentPage == "Setup" then
     StrokeColor  = { 0, 210, 255 },
     CornerRadius = 8,
     Position     = { 5, 5 },
-    Size         = { 490, 200 }
+    Size         = { 490, 210 }
   })
 
   local function cfg_label(text, y)
@@ -353,6 +353,16 @@ elseif CurrentPage == "Setup" then
     FontSize   = 9,
     HTextAlign = "Left",
     Color      = { 105, 104, 104 }
+  })
+
+  table.insert(graphics, {
+    Type       = "Text",
+    Text       = "Copy the auto-discovered MAC address above into the MAC Address property in Designer to persist.",
+    Position   = { 12, 188 },
+    Size       = { 475, 14 },
+    FontSize   = 9,
+    HTextAlign = "Left",
+    Color      = { 220, 160, 0 }
   })
 
 end

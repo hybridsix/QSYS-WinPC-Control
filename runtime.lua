@@ -38,33 +38,18 @@ local OFFLINE_COOLDOWN      = 120  -- seconds of OFFLINE before slowing down
 local baseUrl    = string.format("http://%s:%d", host, httpPort)
 local authHeader = { Authorization = "Bearer " .. authToken }
 
--- File-based MAC cache: survives design re-deploys. The property value is
--- reset to its design-time value (often empty) on every push, but the cache
--- file on /tmp stays intact. Keyed by hostname so multiple plugin instances
--- don't collide.
-local MAC_CACHE_PATH = "/tmp/remotepc_mac_" .. host:gsub("[^%w%-%.%_]", "_") .. ".cache"
-
-local function SaveMacToCache(mac)
-  local ok, err = pcall(function()
-    local f = io.open(MAC_CACHE_PATH, "w")
-    if f then f:write(mac); f:close() end
-  end)
-  if not ok then print("[RemotePC] MAC cache write failed: " .. tostring(err)) end
-end
-
-local function LoadMacFromCache()
-  local ok, result = pcall(function()
-    local f = io.open(MAC_CACHE_PATH, "r")
-    if f then
-      local mac = f:read("*a")
-      f:close()
-      if mac and mac:match("%x%x[:%-%.]%x%x") then return mac end
-    end
-    return nil
-  end)
-  if ok then return result end
-  return nil
-end
+-- MAC address persistence
+--
+-- Q-SYS sandboxes io.open, so file-based caching is not possible on
+-- the Core. The MAC is persisted via the "MAC Address" property:
+--   - Runtime auto-discovery writes it to Properties["MAC Address"].Value
+--   - If the user saves the design in Designer while connected, the
+--     discovered MAC is captured in the .qsd file and survives re-deploys.
+--   - If the design is re-deployed WITHOUT saving first, the property
+--     resets to its design-time value (often empty).
+--
+-- For reliable WOL without saving the design, set the MAC Address
+-- property manually in Designer before deploying.
 
 -- Validate a MAC address string: must be 6 hex pairs separated by : or -
 local function IsValidMac(mac)
@@ -73,8 +58,7 @@ local function IsValidMac(mac)
 end
 
 -- cachedMac holds the MAC address used for Wake-on-LAN.
--- Priority: 1) MAC Address property (if valid), 2) cache file on disk
--- (survives re-deploy), 3) nil (auto-discover when online).
+-- Priority: 1) MAC Address property (if valid), 2) nil (auto-discover when online).
 -- macIsManual is true when the integrator explicitly set a valid MAC in
 -- the Properties panel. When true, auto-discovery will not overwrite it.
 local macIsManual = false
@@ -87,11 +71,7 @@ if macProperty ~= "" then
   else
     print("[RemotePC] WARNING: MAC Address property is invalid: '" .. macProperty .. "'")
     print("[RemotePC] Expected format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF")
-    print("[RemotePC] Falling back to cached MAC address.")
-    cachedMac = LoadMacFromCache()
   end
-else
-  cachedMac = LoadMacFromCache()
 end
 
 -- syncedFromPc is false until the first successful poll sets the fader
@@ -258,6 +238,11 @@ local function http_get_status(callback)
 end
 
 
+-- Forward-declare pollTimer so SendWOL can reference it. The actual
+-- Timer.New() call is further down, after the HTTP transport section.
+local pollTimer
+
+
 -- -------------------------------------------------------------
 -- Wake-on-LAN
 -- Broadcasts the standard 102-byte magic packet on UDP port 9.
@@ -418,7 +403,7 @@ end
 -- Fires every N seconds, sends GET /status, syncs volume and mute.
 -- -------------------------------------------------------------
 
-local pollTimer = Timer.New()
+pollTimer = Timer.New()
 
 -- ParseStatus: converts the plain-text /status body into a key/value table.
 local function ParseStatus(body)
@@ -492,21 +477,18 @@ local function DoPoll()
       -- write it back to the MAC Address property so it survives Core restarts.
       -- Only writes when the value changes to avoid dirtying the design unnecessarily.
       if status.MAC and status.MAC ~= "" then
-        -- Always update the cache file so WOL survives re-deploys.
+        -- Write to the property so it persists if the user saves the design.
         -- But only overwrite cachedMac if the integrator didn't manually set one.
         if macIsManual then
-          -- Manual MAC takes priority; still cache the server-reported MAC
-          -- in case the property is cleared later.
-          SaveMacToCache(status.MAC)
           if cachedMac ~= status.MAC then
-            dbg("Rx", "Server reported MAC " .. status.MAC .. " (ignored â€” manual MAC '" .. cachedMac .. "' takes priority)")
+            dbg("Rx", "Server reported MAC " .. status.MAC .. " (ignored -- manual MAC '" .. cachedMac .. "' takes priority)")
           end
         elseif cachedMac ~= status.MAC then
           cachedMac = status.MAC
           Properties["MAC Address"].Value = cachedMac
-          SaveMacToCache(cachedMac)
           Controls.MacDisplay.String = cachedMac
-          dbg("Rx", "MAC auto-discovered: " .. cachedMac .. " (saved to property + cache)")
+          dbg("Rx", "MAC auto-discovered: " .. cachedMac .. " (saved to property)")
+          print("[RemotePC] TIP: Save the design in Designer now to persist the MAC across re-deploys.")
         end
       end
 
@@ -722,6 +704,8 @@ SetState("OFFLINE")
 Controls.VolumeMin.Value       = 0
 Controls.VolumeMax.Value       = 100
 Controls.VolumeWarning.Boolean = false
+Controls.DiscoveredName.String = "(waiting for poll)"
+Controls.LastPoll.String       = "(not yet)"
 InitSetupControls()
 pollTimer:Start(pollInterval)
 print("[RemotePC] Plugin started. Polling " .. (host ~= "" and host or "(no hostname set)") .. " every " .. pollInterval .. "s.")
@@ -729,9 +713,11 @@ if cachedMac and cachedMac ~= "" then
   if macIsManual then
     print("[RemotePC] MAC address from property (manual): " .. cachedMac)
   else
-    print("[RemotePC] MAC address from cache file: " .. cachedMac)
+    print("[RemotePC] MAC address from property (auto-discovered): " .. cachedMac)
   end
 else
-  print("[RemotePC] No MAC address available â€” will auto-discover when PC comes online.")
+  print("[RemotePC] No MAC address in property -- will auto-discover when PC comes online.")
+  print("[RemotePC] For WOL to work after re-deploy, save the design after MAC is discovered,")
+  print("[RemotePC] or set the MAC Address property manually in Designer.")
 end
 
